@@ -1,0 +1,332 @@
+import json
+import anthropic
+from fastapi import HTTPException
+
+from app.core.config import settings
+from app.schemas.evaluation import (
+    EvaluationSummary,
+    LLMScores,
+    LLMScoresWithWeight,
+    ScoreItemWithWeight,
+    QuestionEvaluationRequest,
+    QuestionEvaluationResponse,
+    StarEvaluationRequest,
+    StarEvaluationResponse,
+    StarEvaluationDetail,
+    StarBreakdown,
+    SessionSummaryRequest,
+    SessionSummaryResponse,
+    SessionSummaryOutput,
+    QuestionHighlight,
+    ReportGenerationRequest,
+    ReportGenerationResponse,
+    WeaknessItem,
+    QuestionFeedback,
+)
+
+# score-policy.md 가중치 테이블
+_WEIGHTS: dict[str, dict[str, float | None]] = {
+    "technical": {
+        "relevance": 0.15, "logic": 0.15, "specificity": 0.15,
+        "conciseness": 0.10, "clarity": 0.10,
+        "accuracy": 0.15, "depth": 0.15, "job_relevance": 0.05,
+        "authenticity": None, "growth": None,
+    },
+    "personality": {
+        "relevance": 0.15, "logic": 0.20, "specificity": 0.15,
+        "conciseness": 0.15, "clarity": 0.15,
+        "accuracy": None, "depth": None,
+        "job_relevance": 0.05, "authenticity": 0.10, "growth": 0.05,
+    },
+}
+
+
+def _client() -> anthropic.AsyncAnthropic:
+    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+
+def _parse_json(text: str) -> dict:
+    """LLM 응답에서 JSON 추출. 마크다운 코드블록으로 감싸진 경우도 처리."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        end = -1 if lines[-1].strip() == "```" else len(lines)
+        text = "\n".join(lines[1:end])
+    return json.loads(text)
+
+
+def _merge_weights(llm_scores: LLMScores, question_type: str) -> LLMScoresWithWeight:
+    weights = _WEIGHTS[question_type]
+    data: dict = {}
+    for field in LLMScores.model_fields:
+        item = getattr(llm_scores, field)
+        w = weights[field]
+        if item is not None and w is not None:
+            data[field] = ScoreItemWithWeight(score=item.score, weight=w, feedback=item.feedback)
+        else:
+            data[field] = None
+    return LLMScoresWithWeight(**data)
+
+
+# ── 질문 단위 평가 ─────────────────────────────────────────────────────────────
+
+async def evaluate_question(req: QuestionEvaluationRequest) -> QuestionEvaluationResponse:
+    type_note = (
+        "기술 질문 → accuracy, depth 평가 / authenticity, growth는 null"
+        if req.question_type == "technical"
+        else "인성 질문 → authenticity, growth 평가 / accuracy, depth는 null"
+    )
+    user_prompt = f"""아래 면접 답변을 평가해주세요.
+
+[채용 정보]
+- 직무: {req.job_title}
+- 회사: {req.company_name}
+- JD 키워드: {req.jd_keywords}
+
+[질문 유형] {req.question_type} — {type_note}
+[질문] {req.question}
+[답변] {req.answer}
+
+---
+
+평가 항목 (score: 1~5 정수, feedback: 한국어)
+- 공통: relevance, logic, specificity, conciseness, clarity, job_relevance
+- technical 전용: accuracy, depth
+- personality 전용: authenticity, growth
+
+JSON만 반환:
+{{
+  "llm_scores": {{
+    "relevance":     {{"score": 정수, "feedback": ""}},
+    "logic":         {{"score": 정수, "feedback": ""}},
+    "specificity":   {{"score": 정수, "feedback": ""}},
+    "conciseness":   {{"score": 정수, "feedback": ""}},
+    "clarity":       {{"score": 정수, "feedback": ""}},
+    "accuracy":      {{"score": 정수, "feedback": ""}} 또는 null,
+    "depth":         {{"score": 정수, "feedback": ""}} 또는 null,
+    "job_relevance": {{"score": 정수, "feedback": ""}},
+    "authenticity":  {{"score": 정수, "feedback": ""}} 또는 null,
+    "growth":        {{"score": 정수, "feedback": ""}} 또는 null
+  }},
+  "summary": {{"strengths": "강점 1~2문장", "improvements": "개선 방향 1~2문장"}}
+}}"""
+
+    try:
+        message = await _client().messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=2048,
+            system="당신은 채용 면접 평가 전문가입니다. 답변을 항목별로 평가하고 JSON 형식으로만 반환합니다. JSON 외 텍스트는 포함하지 마세요.",
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = _parse_json(message.content[0].text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+
+    llm_scores = LLMScores(**raw["llm_scores"])
+    summary = EvaluationSummary(**raw["summary"])
+    return QuestionEvaluationResponse(
+        llm_scores=_merge_weights(llm_scores, req.question_type),
+        summary=summary,
+    )
+
+
+# ── STAR 평가 ─────────────────────────────────────────────────────────────────
+
+async def evaluate_star(req: StarEvaluationRequest) -> StarEvaluationResponse:
+    user_prompt = f"""아래 면접 답변에서 STAR 구조 각 요소가 포함되어 있는지 판단해주세요.
+
+[질문] {req.question}
+[답변] {req.answer}
+
+STAR 기준:
+- Situation: 배경 상황이나 맥락을 설명했는가
+- Task: 본인의 역할이나 해결해야 할 과제를 언급했는가
+- Action: 실제로 취한 행동이나 방법을 구체적으로 설명했는가
+- Result: 결과나 성과를 언급했는가
+
+단순 기술 개념 설명형 질문(정의, 원리, 장단점)은 applicable=false.
+경험/행동 기반 질문은 applicable=true.
+
+JSON만 반환:
+{{
+  "star_evaluation": {{
+    "applicable": true 또는 false,
+    "reason": "판단 이유",
+    "star_breakdown": {{
+      "situation": {{"present": true/false, "feedback": ""}},
+      "task":      {{"present": true/false, "feedback": ""}},
+      "action":    {{"present": true/false, "feedback": ""}},
+      "result":    {{"present": true/false, "feedback": ""}}
+    }} 또는 null,
+    "star_score": 0~4 정수 또는 null
+  }}
+}}"""
+
+    try:
+        message = await _client().messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=1024,
+            system="당신은 면접 답변 구조 분석 전문가입니다. STAR 구조 포함 여부를 판단하고 JSON 형식으로만 반환합니다.",
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = _parse_json(message.content[0].text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+
+    star_data = raw["star_evaluation"]
+    breakdown = None
+    if star_data.get("star_breakdown"):
+        breakdown = StarBreakdown(**star_data["star_breakdown"])
+
+    return StarEvaluationResponse(
+        star_evaluation=StarEvaluationDetail(
+            applicable=star_data["applicable"],
+            reason=star_data["reason"],
+            star_breakdown=breakdown,
+            star_score=star_data.get("star_score"),
+        )
+    )
+
+
+# ── 세션 요약 ─────────────────────────────────────────────────────────────────
+
+async def generate_session_summary(req: SessionSummaryRequest) -> SessionSummaryResponse:
+    summaries_json = json.dumps(
+        [s.model_dump() for s in req.per_question_summaries],
+        ensure_ascii=False, indent=2,
+    )
+    item_avgs_json = json.dumps(req.item_averages.model_dump(), ensure_ascii=False, indent=2)
+    session_score_json = json.dumps(req.session_score.model_dump(), ensure_ascii=False)
+
+    user_prompt = f"""아래는 면접 세션 전체의 평가 데이터입니다. 종합 피드백을 생성해주세요.
+
+[직무 정보]
+- 직무: {req.job_title}
+- 회사: {req.company_name}
+
+[질문별 요약]
+{summaries_json}
+
+[항목별 평균 점수]
+{item_avgs_json}
+
+[세션 점수]
+{session_score_json}
+
+[최고 답변] 질문 {req.best_q.question_index}번 ({req.best_q.percentage:.0f}점): {req.best_q.question}
+[최저 답변] 질문 {req.worst_q.question_index}번 ({req.worst_q.percentage:.0f}점): {req.worst_q.question}
+
+JSON만 반환:
+{{
+  "overall": "세션 전체 흐름 기반 종합 평가 2~3문장",
+  "strengths": "세션 전반에서 반복적으로 잘한 점 1~2문장",
+  "improvements": "세션 전반에서 반복적으로 부족한 점 + 개선 방향 1~2문장",
+  "question_highlights": [
+    {{"question_index": 최고 답변 인덱스, "type": "best", "comment": "코멘트 1문장"}},
+    {{"question_index": 최저 답변 인덱스, "type": "worst", "comment": "코멘트 1문장"}}
+  ]
+}}"""
+
+    try:
+        message = await _client().messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=1024,
+            system="당신은 채용 면접 평가 전문가입니다. 세션 전체의 평가 결과를 바탕으로 종합 피드백을 생성합니다. JSON 형식으로만 반환합니다.",
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = _parse_json(message.content[0].text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+
+    highlights = [QuestionHighlight(**h) for h in raw["question_highlights"]]
+    return SessionSummaryResponse(
+        session_summary=SessionSummaryOutput(
+            overall=raw["overall"],
+            strengths=raw["strengths"],
+            improvements=raw["improvements"],
+            question_highlights=highlights,
+        )
+    )
+
+
+# ── 리포트 생성 ───────────────────────────────────────────────────────────────
+
+async def generate_report(req: ReportGenerationRequest) -> ReportGenerationResponse:
+    evals_json = json.dumps(
+        [e.model_dump() for e in req.question_evaluations],
+        ensure_ascii=False, indent=2,
+    )
+    session_json = json.dumps(req.session_result.model_dump(), ensure_ascii=False, indent=2)
+    voice_json = (
+        json.dumps(req.voice_highlight.model_dump(), ensure_ascii=False)
+        if req.voice_highlight else "null"
+    )
+
+    user_prompt = f"""아래 면접 평가 데이터를 바탕으로 종합 면접 리포트를 생성해주세요.
+
+[직무 정보]
+- 직무: {req.job_title}
+- 회사: {req.company_name}
+
+[질문별 평가 결과]
+{evals_json}
+
+[세션 전체 결과]
+{session_json}
+
+[음성/하이라이트 분석]
+{voice_json}
+
+---
+
+작성 지침:
+- overall: 세션 전체 흐름 기반 2~3문장. 반복 패턴과 전반적 인상 중심으로 작성.
+- strengths: 세션 전반에서 일관되게 잘한 점 1~2문장.
+- weaknesses: key_weakness 항목 기준. 각 항목은 item/comment 구조로 구성.
+- improvements: 구체적 행동 방향 1~2문장. "열심히 하세요" 같은 추상적 표현 금지.
+- question_feedback: 각 질문에 대해 점수 나열 아닌 인사이트 중심 1~2문장. star_comment는 applicable=true일 때만, voice_comment는 voice_feedback이 있을 때만 작성.
+- voice_highlight 데이터는 별도 필드 출력 없이 overall/strengths/improvements에 자연스럽게 반영.
+- final_advice: 다음 면접 연습을 위한 가장 중요한 조언 1~2문장.
+- readiness_comment: interview_readiness.decision을 수치 노출 없이 사용자 친화적으로 해석.
+
+JSON만 반환:
+{{
+  "overall": "",
+  "strengths": "",
+  "weaknesses": [{{"item": "항목명", "comment": "왜 약점인지 1문장"}}],
+  "improvements": "",
+  "question_feedback": [
+    {{
+      "question_index": 정수,
+      "question": "",
+      "question_type": "",
+      "percentage": 숫자,
+      "feedback": "인사이트 중심 1~2문장",
+      "star_comment": "" 또는 null,
+      "voice_comment": "" 또는 null
+    }}
+  ],
+  "final_advice": "",
+  "readiness_comment": ""
+}}"""
+
+    try:
+        message = await _client().messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=4096,
+            system="당신은 채용 면접 피드백 전문가입니다. 면접 평가 데이터를 종합하여 최종 리포트를 생성합니다. JSON 형식으로만 반환합니다.",
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = _parse_json(message.content[0].text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+
+    return ReportGenerationResponse(
+        overall=raw["overall"],
+        strengths=raw["strengths"],
+        weaknesses=[WeaknessItem(**w) for w in raw["weaknesses"]],
+        improvements=raw["improvements"],
+        question_feedback=[QuestionFeedback(**q) for q in raw["question_feedback"]],
+        final_advice=raw["final_advice"],
+        readiness_comment=raw["readiness_comment"],
+    )

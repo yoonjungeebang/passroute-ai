@@ -3,6 +3,7 @@ from fastapi import FastAPI
 import chromadb
 from app.core.config import settings
 from app.services.embedder import OnnxEmbedder
+from app.routers.evaluation import router as evaluation_router
 
 
 @asynccontextmanager
@@ -22,6 +23,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(evaluation_router)
 
 
 @app.get("/health")

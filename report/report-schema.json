@@ -1,0 +1,52 @@
+{
+  "_comment": "리포트 생성 체인 출력 스키마. LLM은 llm_output 필드만 생성. 메타데이터는 API/DB 저장 단계에서 Spring이 부여.",
+
+  "_metadata_comment": "아래 필드는 LLM이 생성하지 않음. Spring에서 저장 시 부여.",
+  "report_id": "uuid",
+  "session_id": "uuid",
+  "created_at": "2026-04-30T20:00:00",
+
+  "_llm_output_comment": "아래 필드가 FastAPI LLM의 실제 출력 범위.",
+  "overall": "전반적으로 기술 역량은 우수하나 답변 구조화 능력에서 일관된 약점이 드러났습니다. 특히 개념 정확성은 높지만 논리적 흐름이 부족하여 전달력이 떨어지는 패턴이 반복됩니다.",
+
+  "strengths": "기술 개념 정확성과 구체적 예시 활용이 세션 전반에서 안정적으로 높았습니다. 인성 질문에서는 경험 기반의 진정성 있는 답변을 잘 전달했습니다.",
+
+  "weaknesses": [
+    {
+      "item": "논리성",
+      "comment": "주장-근거-결론 흐름이 부족하고 나열식 답변이 반복됩니다."
+    },
+    {
+      "item": "간결성",
+      "comment": "핵심 전달은 되나 군더더기 표현과 필러워드 사용이 잦습니다."
+    }
+  ],
+
+  "improvements": "답변 전에 구조를 먼저 설계하는 습관을 들이고, STAR 프레임워크를 경험형 질문에 적극 적용해보세요. 말하기 연습 시 필러워드 없이 천천히 말하는 훈련을 병행하면 전달력이 크게 향상될 것입니다.",
+
+  "_question_feedback_comment": "질문별 간결한 종합 피드백. 항목 점수 나열이 아닌 인사이트 중심.",
+  "question_feedback": [
+    {
+      "question_index": 1,
+      "question": "RESTful API 설계 원칙에 대해 설명해주세요.",
+      "question_type": "technical",
+      "percentage": 65,
+      "feedback": "핵심 개념은 정확하지만 나열식 구조로 인해 논리 흐름이 약했습니다. 다음에는 원칙별로 왜 중요한지 이유와 트레이드오프를 함께 설명해보세요.",
+      "star_comment": null,
+      "voice_comment": "필러워드가 5회 감지되었습니다. 답변 시작 전 짧게 정리하는 습관이 도움이 됩니다."
+    },
+    {
+      "question_index": 2,
+      "question": "협업 과정에서 갈등을 해결한 경험을 말해주세요.",
+      "question_type": "personality",
+      "percentage": 85,
+      "feedback": "상황과 행동이 구체적으로 전달된 좋은 답변이었습니다. 결과 부분을 수치나 팀 변화 중심으로 보완하면 설득력이 더 높아집니다.",
+      "star_comment": "Situation, Task, Action은 충족되었으나 Result가 부족했습니다. 경험의 마무리를 명확히 서술해보세요.",
+      "voice_comment": null
+    }
+  ],
+
+  "final_advice": "다음 연습에서는 논리 구조 훈련(두괄식 답변, STAR 적용)에 집중하고, 말하기 속도를 의식적으로 조절해보세요. 기술 역량은 충분하므로 전달 방식 개선에 집중하면 빠르게 점수가 올라갈 것입니다.",
+
+  "readiness_comment": "현재는 핵심 역량이 안정적으로 드러나는 단계입니다. 답변 구조화와 간결성만 조금 더 보완하면 실전 면접에서도 좋은 인상을 줄 수 있습니다."
+}
