@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import chromadb
 from app.core.config import settings
+from app.routers.follow_up import router as follow_up_router
 from app.services.embedder import OnnxEmbedder
 from app.routers.evaluation import router as evaluation_router
 from app.core.redis_client import init_redis, close_redis
@@ -29,6 +30,9 @@ app = FastAPI(
 app.include_router(evaluation_router)
 
 app.include_router(stt.router)
+
+app.include_router(follow_up_router)
+
 
 @app.get("/health")
 async def health_check():
