@@ -1,5 +1,5 @@
 import json
-import anthropic
+from openai import AsyncOpenAI, OpenAIError
 from fastapi import HTTPException
 
 from app.core.config import settings
@@ -41,9 +41,8 @@ _WEIGHTS: dict[str, dict[str, float | None]] = {
 }
 
 
-def _client() -> anthropic.AsyncAnthropic:
-    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-
+def _client() -> AsyncOpenAI:
+    return AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 def _parse_json(text: str) -> dict:
     """LLM 응답에서 JSON 추출. 마크다운 코드블록으로 감싸진 경우도 처리."""
@@ -53,6 +52,21 @@ def _parse_json(text: str) -> dict:
         end = -1 if lines[-1].strip() == "```" else len(lines)
         text = "\n".join(lines[1:end])
     return json.loads(text)
+
+async def _call_llm_json(system_prompt: str, user_prompt: str, max_output_tokens: int) -> dict:
+    try:
+        response = await _client().responses.create(
+            model=settings.OPENAI_MODEL,
+            instructions=system_prompt,
+            input=user_prompt,
+            max_output_tokens=max_output_tokens,
+        )
+        return _parse_json(response.output_text)
+
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+    except OpenAIError as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI 호출 실패: {e}")
 
 
 def _merge_weights(llm_scores: LLMScores, question_type: str) -> LLMScoresWithWeight:
@@ -111,16 +125,11 @@ JSON만 반환:
   "summary": {{"strengths": "강점 1~2문장", "improvements": "개선 방향 1~2문장"}}
 }}"""
 
-    try:
-        message = await _client().messages.create(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=2048,
-            system="당신은 채용 면접 평가 전문가입니다. 답변을 항목별로 평가하고 JSON 형식으로만 반환합니다. JSON 외 텍스트는 포함하지 마세요.",
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = _parse_json(message.content[0].text)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+    raw = await _call_llm_json(
+        system_prompt="당신은 채용 면접 평가 전문가입니다. 답변을 항목별로 평가하고 JSON 형식으로만 반환합니다. JSON 외 텍스트는 포함하지 마세요.",
+        user_prompt=user_prompt,
+        max_output_tokens=2048,
+    )
 
     llm_scores = LLMScores(**raw["llm_scores"])
     summary = EvaluationSummary(**raw["summary"])
@@ -162,16 +171,11 @@ JSON만 반환:
   }}
 }}"""
 
-    try:
-        message = await _client().messages.create(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=1024,
-            system="당신은 면접 답변 구조 분석 전문가입니다. STAR 구조 포함 여부를 판단하고 JSON 형식으로만 반환합니다.",
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = _parse_json(message.content[0].text)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+    raw = await _call_llm_json(
+        system_prompt="당신은 면접 답변 구조 분석 전문가입니다. STAR 구조 포함 여부를 판단하고 JSON 형식으로만 반환합니다.",
+        user_prompt=user_prompt,
+        max_output_tokens=1024,
+    )
 
     star_data = raw["star_evaluation"]
     breakdown = None
@@ -227,16 +231,11 @@ JSON만 반환:
   ]
 }}"""
 
-    try:
-        message = await _client().messages.create(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=1024,
-            system="당신은 채용 면접 평가 전문가입니다. 세션 전체의 평가 결과를 바탕으로 종합 피드백을 생성합니다. JSON 형식으로만 반환합니다.",
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = _parse_json(message.content[0].text)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+    raw = await _call_llm_json(
+        system_prompt="당신은 채용 면접 평가 전문가입니다. 세션 전체의 평가 결과를 바탕으로 종합 피드백을 생성합니다. JSON 형식으로만 반환합니다.",
+        user_prompt=user_prompt,
+        max_output_tokens=1024,
+    )
 
     highlights = [QuestionHighlight(**h) for h in raw["question_highlights"]]
     return SessionSummaryResponse(
@@ -310,17 +309,12 @@ JSON만 반환:
   "readiness_comment": ""
 }}"""
 
-    try:
-        message = await _client().messages.create(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=4096,
-            system="당신은 채용 면접 피드백 전문가입니다. 면접 평가 데이터를 종합하여 최종 리포트를 생성합니다. JSON 형식으로만 반환합니다.",
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = _parse_json(message.content[0].text)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
-
+    raw = await _call_llm_json(
+        system_prompt="당신은 채용 면접 피드백 전문가입니다. 면접 평가 데이터를 종합하여 최종 리포트를 생성합니다. JSON 형식으로만 반환합니다.",
+        user_prompt=user_prompt,
+        max_output_tokens=4096,
+    )
+    
     return ReportGenerationResponse(
         overall=raw["overall"],
         strengths=raw["strengths"],
