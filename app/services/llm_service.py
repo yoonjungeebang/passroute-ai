@@ -1,4 +1,5 @@
 import json
+import re
 from openai import AsyncOpenAI, OpenAIError
 from fastapi import HTTPException
 
@@ -41,16 +42,14 @@ _WEIGHTS: dict[str, dict[str, float | None]] = {
 }
 
 
-_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, timeout=60.0)
 
 def _parse_json(text: str) -> dict:
-    """LLM 응답에서 JSON 추출. 마크다운 코드블록으로 감싸진 경우도 처리."""
     text = text.strip()
     if text.startswith("```"):
-        lines = text.split("\n")
-        end = -1 if lines[-1].strip() == "```" else len(lines)
-        text = "\n".join(lines[1:end])
-    return json.loads(text)
+        text = re.sub(r'^```[^\n]*\n?', '', text)
+        text = re.sub(r'\n?```\s*$', '', text)
+    return json.loads(text.strip())
 
 async def _call_llm_json(system_prompt: str, user_prompt: str, max_output_tokens: int) -> dict:
     try:

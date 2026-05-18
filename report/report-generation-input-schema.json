@@ -1,10 +1,8 @@
 {
   "_comment": "리포트 생성 체인 입력 스키마. Spring에서 조합하여 FastAPI로 전달.",
 
-  "job_info": {
-    "job_title": "백엔드 개발자",
-    "company_name": "카카오"
-  },
+  "job_title": "백엔드 개발자",
+  "company_name": "카카오",
 
   "question_evaluations": [
     {
@@ -45,16 +43,16 @@
     "percentage": 76,
     "consistency_score": 0.85,
     "item_averages": {
-      "relevance":     { "avg": 4.3 },
-      "logic":         { "avg": 3.0 },
-      "specificity":   { "avg": 4.0 },
-      "conciseness":   { "avg": 2.8 },
-      "clarity":       { "avg": 3.7 },
-      "accuracy":      { "avg": 4.5 },
-      "depth":         { "avg": 3.0 },
-      "job_relevance": { "avg": 3.7 },
-      "authenticity":  { "avg": 4.5 },
-      "growth":        { "avg": 4.0 }
+      "relevance":     { "avg": 4.3, "evaluated_count": 2 },
+      "logic":         { "avg": 3.0, "evaluated_count": 2 },
+      "specificity":   { "avg": 4.0, "evaluated_count": 2 },
+      "conciseness":   { "avg": 2.8, "evaluated_count": 2 },
+      "clarity":       { "avg": 3.7, "evaluated_count": 2 },
+      "accuracy":      { "avg": 4.5, "evaluated_count": 1 },
+      "depth":         { "avg": 3.0, "evaluated_count": 1 },
+      "job_relevance": { "avg": 3.7, "evaluated_count": 2 },
+      "authenticity":  { "avg": 4.5, "evaluated_count": 1 },
+      "growth":        { "avg": 4.0, "evaluated_count": 1 }
     },
     "key_weakness": ["논리성", "간결성"],
     "interview_readiness": {
