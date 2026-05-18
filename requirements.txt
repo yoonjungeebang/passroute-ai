@@ -9,12 +9,10 @@ typing_extensions==4.15.0
 fastapi==0.115.0
 uvicorn==0.30.6
 pydantic-settings==2.6.1
-<<<<<<< HEAD
-chromadb==0.5.23
-=======
 chromadb-client==0.5.23
 openai>=1.30.0
->>>>>>> 1dfcc9e (fix: chromadb를 chromadb-client로 교체하여 메모리 사용량 절감)
+chromadb-client==0.5.23
+openai>=1.30.0
 python-dotenv==1.0.1
 python-multipart==0.0.12
 openai==2.32.0
