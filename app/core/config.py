@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     
     OPENAI_API_KEY: str
     OPENAI_MODEL: str = "gpt-4o-mini"
-    
+
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "ap-northeast-2"
