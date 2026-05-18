@@ -41,8 +41,7 @@ _WEIGHTS: dict[str, dict[str, float | None]] = {
 }
 
 
-def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 def _parse_json(text: str) -> dict:
     """LLM 응답에서 JSON 추출. 마크다운 코드블록으로 감싸진 경우도 처리."""
@@ -55,7 +54,7 @@ def _parse_json(text: str) -> dict:
 
 async def _call_llm_json(system_prompt: str, user_prompt: str, max_output_tokens: int) -> dict:
     try:
-        response = await _client().responses.create(
+        response = await _client.responses.create(
             model=settings.OPENAI_MODEL,
             instructions=system_prompt,
             input=user_prompt,
