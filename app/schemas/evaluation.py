@@ -138,7 +138,6 @@ class BestWorstQ(BaseModel):
     question_index: int
     question: str
     percentage: float = Field(ge=0, le=100)
-    summary: EvaluationSummary
 
 
 class SessionSummaryRequest(BaseModel):
