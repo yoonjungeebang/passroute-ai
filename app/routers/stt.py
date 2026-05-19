@@ -7,7 +7,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
 from app.services.voice_analysis_service import count_filler_words
-from app.core.redis_client import append_stt_transcript, set_voice_metric, incrby_voice_metric
+from app.core.redis_client import append_stt_transcript, set_voice_metric, incrby_voice_metric, get_voice_summary
+from app.core.database import AsyncSessionLocal
+from app.models.voice_analysis import VoiceAnalysis
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -126,3 +128,18 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     logger.info(f"[{session_id}:{question_id}] 최종 STT: {text}")
             except Exception as e:
                 logger.error(f"최종 STT 에러: {e}")
+
+        try:
+            summary = await get_voice_summary(session_id, question_id)
+            async with AsyncSessionLocal() as db:
+                db.add(VoiceAnalysis(
+                    session_id=session_id,
+                    question_id=question_id,
+                    avg_wpm=summary["avg_wpm"],
+                    silence_ratio=summary["silence_ratio"],
+                    filler_count=summary["filler_count"],
+                ))
+                await db.commit()
+            logger.info(f"[{session_id}:{question_id}] 음성 분석 MySQL 저장 완료")
+        except Exception as e:
+            logger.error(f"음성 분석 MySQL 저장 에러: {e}")
