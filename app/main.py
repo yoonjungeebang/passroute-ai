@@ -10,11 +10,11 @@ from app.routers import stt, voice_analysis
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_redis()
-    # app.state.chroma = chromadb.HttpClient(
-    #     host=settings.CHROMADB_HOST,
-    #     port=settings.CHROMADB_PORT,
-    # )
-    # app.state.embedder = OnnxEmbedder()
+    app.state.chroma = chromadb.HttpClient(
+        host=settings.CHROMADB_HOST,
+        port=settings.CHROMADB_PORT,
+    )
+    app.state.embedder = OnnxEmbedder()
     yield
     await close_redis()
 
@@ -32,7 +32,3 @@ app.include_router(voice_analysis.router)
 async def health_check():
     return {"status": "ok"}
 
-@app.get("/test")
-async def test_page():
-    from fastapi.responses import FileResponse
-    return FileResponse("test.html")
