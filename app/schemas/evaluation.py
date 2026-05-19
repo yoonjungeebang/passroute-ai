@@ -172,7 +172,7 @@ class SessionSummaryResponse(BaseModel):
 
 class StarEvalForReport(BaseModel):
     applicable: bool
-    star_score: Optional[int] = None
+    star_score: Optional[int] = Field(default=None, ge=0, le=4)
 
 
 class QuestionEvalForReport(BaseModel):
