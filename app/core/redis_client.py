@@ -29,3 +29,19 @@ async def append_stt_transcript(session_id: str, question_id: str, text: str) ->
     key = f"stt:{session_id}:{question_id}"
     await r.rpush(key, text)
     await r.expire(key, STT_TRANSCRIPT_TTL)
+
+
+VOICE_ANALYSIS_TTL = 3600  # 1시간
+
+
+async def set_voice_metric(session_id: str, question_id: str, metric: str, value: float) -> None:
+    r = get_redis()
+    key = f"voice:{session_id}:{question_id}:{metric}"
+    await r.set(key, value, ex=VOICE_ANALYSIS_TTL)
+
+
+async def incrby_voice_metric(session_id: str, question_id: str, metric: str, value: int) -> None:
+    r = get_redis()
+    key = f"voice:{session_id}:{question_id}:{metric}"
+    await r.incrby(key, value)
+    await r.expire(key, VOICE_ANALYSIS_TTL)

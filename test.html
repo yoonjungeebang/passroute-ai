@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>STT + 음성 분석 테스트</title>
+    <style>
+        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+        .metrics { display: flex; gap: 16px; margin: 16px 0; }
+        .metric { background: #f0f0f0; border-radius: 8px; padding: 12px 20px; text-align: center; flex: 1; }
+        .metric .value { font-size: 1.8em; font-weight: bold; color: #333; }
+        .metric .label { font-size: 0.8em; color: #666; margin-top: 4px; }
+        .log { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85em; }
+        .transcript { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 60px; }
+        .feedback { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 10px 14px; font-weight: bold; transition: opacity 0.3s; }
+        button { padding: 10px 24px; font-size: 1em; border: none; border-radius: 6px; cursor: pointer; margin-right: 8px; }
+        #start { background: #4CAF50; color: white; }
+        #stop { background: #f44336; color: white; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .status { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
+        .status.recording { background: #ffeb3b; color: #333; }
+        .status.silence { background: #e0e0e0; color: #333; }
+        .status.completed { background: #c8e6c9; color: #333; }
+    </style>
+</head>
+<body>
+    <h1>STT + 음성 분석 테스트</h1>
+
+    <div>
+        <button id="start">녹음 시작</button>
+        <button id="stop" disabled>녹음 종료</button>
+        <span id="statusBadge" class="status silence">대기 중</span>
+    </div>
+
+    <h3>실시간 분석</h3>
+    <div class="metrics">
+        <div class="metric">
+            <div class="value" id="dbVal">-</div>
+            <div class="label">데시벨 (dB)</div>
+        </div>
+        <div class="metric">
+            <div class="value" id="wpmVal">-</div>
+            <div class="label">발화 속도 (WPM)</div>
+        </div>
+        <div class="metric">
+            <div class="value" id="fillerVal">0</div>
+            <div class="label">필러워드 횟수</div>
+        </div>
+    </div>
+
+    <h3>실시간 피드백</h3>
+    <div id="feedbackArea"></div>
+
+    <h3>STT 텍스트</h3>
+    <div class="transcript" id="transcript"></div>
+
+    <h3>로그</h3>
+    <div class="log" id="log"></div>
+
+    <script>
+        let ws, audioContext, processor, stream;
+        let totalFiller = 0;
+
+        function log(msg) {
+            const el = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            el.innerHTML += `<div>[${time}] ${JSON.stringify(msg)}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function setStatus(status) {
+            const el = document.getElementById('statusBadge');
+            el.className = `status ${status}`;
+            const labels = { recording: '녹음 중', silence: '침묵', completed: '변환 완료' };
+            el.textContent = labels[status] || status;
+        }
+
+        document.getElementById('start').onclick = async () => {
+            totalFiller = 0;
+            document.getElementById('transcript').innerHTML = '';
+            document.getElementById('fillerVal').textContent = '0';
+            document.getElementById('dbVal').textContent = '-';
+            document.getElementById('wpmVal').textContent = '-';
+
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new AudioContext({ sampleRate: 16000 });
+
+            ws = new WebSocket('ws://127.0.0.1:8000/ws/stt/test-session/test-question');
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                log(data);
+                setStatus(data.status);
+
+                if (data.status === 'feedback') {
+                    const area = document.getElementById('feedbackArea');
+                    area.innerHTML = '';
+                    const el = document.createElement('div');
+                    el.className = 'feedback';
+                    el.textContent = `⚠️ ${data.message}`;
+                    area.appendChild(el);
+                    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => area.innerHTML = '', 300); }, 2000);
+                }
+
+                if (data.status === 'completed') {
+                    if (data.text) {
+                        document.getElementById('transcript').innerHTML += `<p>${data.text}</p>`;
+                    }
+                    if (data.wpm !== undefined) {
+                        document.getElementById('wpmVal').textContent = data.wpm;
+                    }
+                    if (data.filler_count !== undefined) {
+                        totalFiller += data.filler_count;
+                        document.getElementById('fillerVal').textContent = totalFiller;
+                    }
+                }
+
+                if (data.decibel !== undefined) {
+                    document.getElementById('dbVal').textContent = data.decibel;
+                }
+            };
+
+            ws.onopen = () => {
+                const source = audioContext.createMediaStreamSource(stream);
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                processor.onaudioprocess = (e) => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        const float32 = e.inputBuffer.getChannelData(0);
+                        const int16 = new Int16Array(float32.length);
+                        for (let i = 0; i < float32.length; i++) {
+                            int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+                        }
+                        ws.send(int16.buffer);
+                    }
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                document.getElementById('start').disabled = true;
+                document.getElementById('stop').disabled = false;
+                log({ status: 'connected' });
+            };
+
+            ws.onerror = (e) => log({ error: 'WebSocket 오류' });
+            ws.onclose = () => { setStatus('silence'); log({ status: 'disconnected' }); };
+        };
+
+        document.getElementById('stop').onclick = () => {
+            processor.disconnect();
+            audioContext.close();
+            ws.close();
+            stream.getTracks().forEach(t => t.stop());
+            document.getElementById('start').disabled = false;
+            document.getElementById('stop').disabled = true;
+        };
+    </script>
+</body>
+</html>
