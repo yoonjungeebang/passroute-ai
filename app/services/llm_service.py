@@ -283,6 +283,7 @@ async def generate_report(req: ReportGenerationRequest) -> ReportGenerationRespo
 - improvements: 구체적 행동 방향 1~2문장. "열심히 하세요" 같은 추상적 표현 금지.
 - question_feedback: 각 질문에 대해 점수 나열 아닌 인사이트 중심 1~2문장. star_comment는 applicable=true일 때만, voice_comment는 voice_feedback이 있을 때만 작성.
 - voice_highlight 데이터는 별도 필드 출력 없이 overall/strengths/improvements에 자연스럽게 반영.
+- recommended_questions: 이번 세션의 약점과 부족한 답변을 바탕으로 다음 연습에서 풀어볼 면접 질문 3개. 직무와 약점 항목에 맞게 구체적으로 작성. 질문 텍스트만 문자열로 반환.
 - final_advice: 다음 면접 연습을 위한 가장 중요한 조언 1~2문장.
 - readiness_comment: interview_readiness.decision을 수치 노출 없이 사용자 친화적으로 해석.
 
@@ -303,6 +304,7 @@ JSON만 반환:
       "voice_comment": "" 또는 null
     }}
   ],
+  "recommended_questions": ["질문1", "질문2", "질문3"],
   "final_advice": "",
   "readiness_comment": ""
 }}"""
@@ -319,6 +321,7 @@ JSON만 반환:
         weaknesses=[WeaknessItem(**w) for w in raw["weaknesses"]],
         improvements=raw["improvements"],
         question_feedback=[QuestionFeedback(**q) for q in raw["question_feedback"]],
+        recommended_questions=raw["recommended_questions"],
         final_advice=raw["final_advice"],
         readiness_comment=raw["readiness_comment"],
     )

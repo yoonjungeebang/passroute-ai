@@ -238,5 +238,6 @@ class ReportGenerationResponse(BaseModel):
     weaknesses: list[WeaknessItem]
     improvements: str
     question_feedback: list[QuestionFeedback]
+    recommended_questions: list[str]
     final_advice: str
     readiness_comment: str
