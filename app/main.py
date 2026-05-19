@@ -4,6 +4,7 @@ import chromadb
 from app.core.config import settings
 from app.services.embedder import OnnxEmbedder
 from app.core.redis_client import init_redis, close_redis
+from app.services.stt_service import close_http_client
 from app.routers import stt, voice_analysis
 
 
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
     app.state.embedder = OnnxEmbedder()
     yield
     await close_redis()
+    await close_http_client()
 
 
 app = FastAPI(

@@ -10,6 +10,11 @@ SAMPLE_RATE = 16000
 FRAME_DURATION = 30
 
 vad = webrtcvad.Vad(3)
+_http_client = httpx.AsyncClient(timeout=30.0)
+
+
+async def close_http_client():
+    await _http_client.aclose()
 
 
 def detect_voice(audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bool:
@@ -49,17 +54,16 @@ async def transcribe_audio(audio: np.ndarray) -> str:
         "diarization": {"enable": False},
     })
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{settings.CLOVA_INVOKE_URL}/recognizer/upload",
-            headers={"X-CLOVASPEECH-API-KEY": settings.CLOVA_SECRET_KEY},
-            files={
-                "media": ("audio.wav", wav_bytes, "audio/wav"),
-                "params": (None, params, "application/json"),
-            },
-        )
-        if response.status_code != 200:
-            import logging
-            logging.getLogger(__name__).error(f"Clova 에러 응답: {response.text}")
-            response.raise_for_status()
-        return response.json().get("text", "")
+    response = await _http_client.post(
+        f"{settings.CLOVA_INVOKE_URL}/recognizer/upload",
+        headers={"X-CLOVASPEECH-API-KEY": settings.CLOVA_SECRET_KEY},
+        files={
+            "media": ("audio.wav", wav_bytes, "audio/wav"),
+            "params": (None, params, "application/json"),
+        },
+    )
+    if response.status_code != 200:
+        import logging
+        logging.getLogger(__name__).error(f"Clova 에러 응답: {response.text}")
+        response.raise_for_status()
+    return response.json().get("text", "")

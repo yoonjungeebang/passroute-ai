@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import settings
 
 # SSL 설정 (RDS 연결용, 인증서 파일이 있을 때만 적용)
-_cert_path = "/app/global-bundle.pem"
+_cert_path = settings.SSL_CERT_PATH
 if os.path.exists(_cert_path):
     ssl_ctx = ssl.create_default_context(cafile=_cert_path)
     connect_args = {"ssl": ssl_ctx}
