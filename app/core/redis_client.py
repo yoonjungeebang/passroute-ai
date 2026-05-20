@@ -47,6 +47,12 @@ async def incrby_voice_metric(session_id: str, question_id: str, metric: str, va
     await r.expire(key, VOICE_ANALYSIS_TTL)
 
 
+async def get_full_transcript(session_id: str, question_id: str) -> str:
+    r = get_redis()
+    segments = await r.lrange(f"stt:{session_id}:{question_id}", 0, -1)
+    return " ".join(segments)
+
+
 async def get_voice_summary(session_id: str, question_id: str) -> dict:
     r = get_redis()
     prefix = f"voice:{session_id}:{question_id}"

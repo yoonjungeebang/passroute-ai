@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
 from app.services.voice_analysis_service import count_filler_words
-from app.core.redis_client import append_stt_transcript, set_voice_metric, incrby_voice_metric, get_voice_summary
+from app.core.redis_client import append_stt_transcript, set_voice_metric, incrby_voice_metric, get_voice_summary, get_full_transcript
 from app.core.database import AsyncSessionLocal
 from app.models.voice_analysis import VoiceAnalysis
 
@@ -131,6 +131,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
         try:
             summary = await get_voice_summary(session_id, question_id)
+            full_text = await get_full_transcript(session_id, question_id)
             async with AsyncSessionLocal() as db:
                 db.add(VoiceAnalysis(
                     session_id=session_id,
@@ -139,7 +140,13 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     silence_ratio=summary["silence_ratio"],
                     filler_count=summary["filler_count"],
                 ))
+                if full_text:
+                    from sqlalchemy import text
+                    await db.execute(
+                        text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
+                        {"stt_text": full_text, "session_id": session_id, "question_id": question_id},
+                    )
                 await db.commit()
-            logger.info(f"[{session_id}:{question_id}] 음성 분석 MySQL 저장 완료")
+            logger.info(f"[{session_id}:{question_id}] MySQL 저장 완료")
         except Exception as e:
-            logger.error(f"음성 분석 MySQL 저장 에러: {e}")
+            logger.error(f"MySQL 저장 에러: {e}")
