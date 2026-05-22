@@ -4,6 +4,7 @@ from app.core.config import settings
 _redis: aioredis.Redis | None = None
 
 STT_TRANSCRIPT_TTL = 3600  # 1시간
+VOICE_ANALYSIS_TTL = 3600  # 1시간
 
 
 async def init_redis():
@@ -31,13 +32,19 @@ async def append_stt_transcript(session_id: str, question_id: str, text: str) ->
     await r.expire(key, STT_TRANSCRIPT_TTL)
 
 
-VOICE_ANALYSIS_TTL = 3600  # 1시간
-
-
 async def set_voice_metric(session_id: str, question_id: str, metric: str, value: float) -> None:
+    """실시간 피드백용 최신값 저장 (덮어쓰기)"""
     r = get_redis()
     key = f"voice:{session_id}:{question_id}:{metric}"
     await r.set(key, value, ex=VOICE_ANALYSIS_TTL)
+
+
+async def rpush_voice_metric(session_id: str, question_id: str, metric: str, value: float) -> None:
+    """리포트용 누적 리스트 저장"""
+    r = get_redis()
+    key = f"voice:{session_id}:{question_id}:{metric}"
+    await r.rpush(key, value)
+    await r.expire(key, VOICE_ANALYSIS_TTL)
 
 
 async def incrby_voice_metric(session_id: str, question_id: str, metric: str, value: int) -> None:
@@ -57,16 +64,16 @@ async def get_voice_summary(session_id: str, question_id: str) -> dict:
     r = get_redis()
     prefix = f"voice:{session_id}:{question_id}"
 
-    wpm_raw = await r.get(f"{prefix}:wpm")
-    silence_raw = await r.get(f"{prefix}:silence_sec")
+    wpm_values = [float(v) for v in await r.lrange(f"{prefix}:wpm_values", 0, -1)]
+    silence_values = [float(v) for v in await r.lrange(f"{prefix}:silence_values", 0, -1)]
     filler_raw = await r.get(f"{prefix}:filler_count")
 
-    wpm = float(wpm_raw) if wpm_raw else 0.0
-    silence_sec = float(silence_raw) if silence_raw else 0.0
+    avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
+    avg_silence = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
     filler_count = int(filler_raw) if filler_raw else 0
 
     return {
-        "avg_wpm": round(wpm, 2),
-        "silence_ratio": silence_sec,
+        "avg_wpm": avg_wpm,
+        "silence_ratio": avg_silence,
         "filler_count": filler_count,
     }

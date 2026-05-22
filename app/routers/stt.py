@@ -8,7 +8,14 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
 from app.services.voice_analysis_service import count_filler_words
-from app.core.redis_client import append_stt_transcript, set_voice_metric, incrby_voice_metric, get_voice_summary, get_full_transcript
+from app.core.redis_client import (
+    append_stt_transcript,
+    set_voice_metric,
+    rpush_voice_metric,
+    incrby_voice_metric,
+    get_voice_summary,
+    get_full_transcript,
+)
 from app.core.database import AsyncSessionLocal
 from app.models.voice_analysis import VoiceAnalysis
 
@@ -33,6 +40,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
     silence_start: float | None = None
     last_feedback: dict = {}
+    is_connected = True
 
     def can_feedback(fb_type: str) -> bool:
         now = time.time()
@@ -54,6 +62,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
             await append_stt_transcript(session_id, question_id, text)
 
+            # WPM 슬라이딩 윈도우 (실시간 피드백용)
             words = len([w for w in text.split() if w])
             speech_segments.append((ts, words, segment_sec))
             cutoff = ts - WPM_WINDOW_SEC
@@ -63,14 +72,22 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             total_words = sum(s[1] for s in speech_segments)
             total_sec = sum(s[2] for s in speech_segments)
             wpm = round(total_words / total_sec * 60, 1) if total_sec > 0 else 0.0
-            await set_voice_metric(session_id, question_id, "wpm", wpm)
 
+            # 실시간 피드백용 최신값 + 리포트용 리스트 저장
+            await set_voice_metric(session_id, question_id, "wpm", wpm)
+            if wpm > 0:
+                await rpush_voice_metric(session_id, question_id, "wpm_values", wpm)
+
+            # 필러워드
             filler_count = count_filler_words(text)
             await incrby_voice_metric(session_id, question_id, "filler_count", filler_count)
             if filler_count > 0:
                 consecutive_filler_segments += 1
             else:
                 consecutive_filler_segments = 0
+
+            if not is_connected:
+                return
 
             await websocket.send_json({
                 "status": "completed",
@@ -91,7 +108,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
         except Exception as e:
             logger.error(f"STT 에러: {e}")
-            await websocket.send_json({"status": "error", "message": str(e)})
+            if is_connected:
+                try:
+                    await websocket.send_json({"status": "error", "message": str(e)})
+                except Exception:
+                    pass
 
     try:
         while True:
@@ -100,7 +121,13 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             now = time.time()
 
             if detect_voice(chunk):
-                silence_start = None
+                # 음성 감지 시 침묵 구간 종료 → 침묵 시간 리스트에 저장
+                if silence_start is not None:
+                    silence_sec = round(now - silence_start, 2)
+                    if silence_sec > 0.5:  # 0.5초 이상 침묵만 의미 있는 침묵으로 기록
+                        await rpush_voice_metric(session_id, question_id, "silence_values", silence_sec)
+                    silence_start = None
+
                 audio_chunks.append(chunk)
                 await websocket.send_json({"status": "recording"})
 
@@ -123,6 +150,14 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     await websocket.send_json({"status": "silence"})
 
     except WebSocketDisconnect:
+        is_connected = False
+
+        # 마지막 침묵 구간 저장
+        if silence_start is not None:
+            silence_sec = round(time.time() - silence_start, 2)
+            if silence_sec > 0.5:
+                await rpush_voice_metric(session_id, question_id, "silence_values", silence_sec)
+
         if audio_chunks:
             try:
                 text = await transcribe_audio(np.concatenate(audio_chunks))
@@ -134,7 +169,6 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
         try:
             summary = await get_voice_summary(session_id, question_id)
-            full_text = await get_full_transcript(session_id, question_id)
             async with AsyncSessionLocal() as db:
                 db.add(VoiceAnalysis(
                     session_id=session_id,
@@ -143,13 +177,21 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     silence_ratio=summary["silence_ratio"],
                     filler_count=summary["filler_count"],
                 ))
-                if full_text:
-                    from sqlalchemy import text
+                await db.commit()
+            logger.info(f"[{session_id}:{question_id}] voice_analysis MySQL 저장 완료")
+        except Exception as e:
+            logger.error(f"voice_analysis MySQL 저장 에러: {e}")
+
+        try:
+            full_text = await get_full_transcript(session_id, question_id)
+            if full_text and question_id.isdigit():
+                from sqlalchemy import text
+                async with AsyncSessionLocal() as db:
                     await db.execute(
                         text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
-                        {"stt_text": full_text, "session_id": session_id, "question_id": question_id},
+                        {"stt_text": full_text, "session_id": int(session_id) if session_id.isdigit() else session_id, "question_id": int(question_id)},
                     )
-                await db.commit()
-            logger.info(f"[{session_id}:{question_id}] MySQL 저장 완료")
+                    await db.commit()
+                logger.info(f"[{session_id}:{question_id}] interview_answers MySQL 저장 완료")
         except Exception as e:
-            logger.error(f"MySQL 저장 에러: {e}")
+            logger.error(f"interview_answers MySQL 저장 에러: {e}")
