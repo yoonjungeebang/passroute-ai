@@ -160,10 +160,10 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             else:
                 if silence_start is None:
                     silence_start = now
-                    await send_ws({"status": "silence"})
 
                 silence_sec = round(now - silence_start, 2)
                 await set_voice_metric(session_id, question_id, "silence_sec", silence_sec)
+                await send_ws({"status": "silence", "silence_sec": silence_sec})
 
                 if silence_sec > SILENCE_ALERT_SEC:
                     await send_feedback("silence", "답변 중 침묵이 길어지고 있습니다.")
