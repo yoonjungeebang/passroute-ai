@@ -140,7 +140,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     try:
         while True:
             data = await websocket.receive_bytes()
-            chunk = np.frombuffer(data, dtype=np.int16)
+            try:
+                chunk = np.frombuffer(data, dtype=np.int16)
+            except ValueError:
+                logger.warning("잘못된 오디오 데이터 수신 (홀수 바이트)")
+                continue
             now = time.time()
 
             if detect_voice(chunk):
@@ -202,10 +206,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     avg_silence_duration=summary["avg_silence_duration"],
                     filler_count=summary["filler_count"],
                 ))
-                if full_text and question_id.isdigit():
+                # interview_answers.question_id는 Spring Boot 스키마 기준 INT 타입
+                if full_text and session_id.isdigit() and question_id.isdigit():
                     await db.execute(
                         text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
-                        {"stt_text": full_text, "session_id": session_id, "question_id": int(question_id)},
+                        {"stt_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
                     )
                 await db.commit()
             logger.info(f"[{session_id}:{question_id}] 분석 결과 MySQL 저장 완료")
