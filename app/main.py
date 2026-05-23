@@ -3,7 +3,8 @@ from fastapi import FastAPI
 import chromadb
 from app.core.config import settings
 from app.routers.follow_up import router as follow_up_router
-from app.services.embedder import OnnxEmbedder
+from app.routers.question_generate import router as question_generate_router
+from app.services.embedder import get_embedder
 from app.core.redis_client import init_redis, close_redis
 from app.routers import stt
 from app.routers.resume import router as resume_router
@@ -16,7 +17,7 @@ async def lifespan(app: FastAPI):
         host=settings.CHROMADB_HOST,
         port=settings.CHROMADB_PORT,
     )
-    app.state.embedder = OnnxEmbedder()
+    app.state.embedder = get_embedder()
     yield
     await close_redis()
 
@@ -30,6 +31,8 @@ app = FastAPI(
 app.include_router(stt.router)
 
 app.include_router(follow_up_router)
+
+app.include_router(question_generate_router)
 
 app.include_router(resume_router)
 
