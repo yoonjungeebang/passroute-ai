@@ -4,7 +4,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
     
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
 
     AWS_ACCESS_KEY_ID: str = ""

@@ -41,7 +41,7 @@
   "session_result": {
     "_comment": "session-evaluation-schema.json에서 추출.",
     "percentage": 76,
-    "consistency_score": 0.85,
+    "consistency_score": 0.80,
     "item_averages": {
       "relevance":     { "avg": 4.3, "evaluated_count": 2 },
       "logic":         { "avg": 3.0, "evaluated_count": 2 },

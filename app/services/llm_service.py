@@ -58,6 +58,7 @@ async def _call_llm_json(system_prompt: str, user_prompt: str, max_output_tokens
             instructions=system_prompt,
             input=user_prompt,
             max_output_tokens=max_output_tokens,
+            text={"format": {"type": "json_object"}},
         )
         return _parse_json(response.output_text)
 

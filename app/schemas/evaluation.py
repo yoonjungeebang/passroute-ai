@@ -138,7 +138,6 @@ class BestWorstQ(BaseModel):
     question_index: int
     question: str
     percentage: float = Field(ge=0, le=100)
-    summary: EvaluationSummary
 
 
 class SessionSummaryRequest(BaseModel):
@@ -172,7 +171,7 @@ class SessionSummaryResponse(BaseModel):
 
 class StarEvalForReport(BaseModel):
     applicable: bool
-    star_score: Optional[int] = None
+    star_score: Optional[int] = Field(default=None, ge=0, le=4)
 
 
 class QuestionEvalForReport(BaseModel):
