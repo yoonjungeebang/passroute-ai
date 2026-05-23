@@ -74,6 +74,6 @@ async def get_voice_summary(session_id: str, question_id: str) -> dict:
 
     return {
         "avg_wpm": avg_wpm,
-        "silence_ratio": avg_silence_duration,
+        "avg_silence_duration": avg_silence_duration,
         "filler_count": filler_count,
     }
