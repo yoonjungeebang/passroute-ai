@@ -12,7 +12,7 @@ async def end_interview(session_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(
             func.avg(VoiceAnalysis.avg_wpm).label("avg_wpm"),
-            func.avg(VoiceAnalysis.silence_ratio).label("avg_silence_ratio"),
+            func.avg(VoiceAnalysis.avg_silence_duration).label("avg_silence_ratio"),
             func.sum(VoiceAnalysis.filler_count).label("total_filler_count"),
         ).where(VoiceAnalysis.session_id == session_id)
     )

@@ -37,7 +37,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     await websocket.accept()
     audio_chunks = []
     ws_lock = asyncio.Lock()
-    background_tasks: set[asyncio.Task] = set()
+    stt_queue: asyncio.Queue = asyncio.Queue()
 
     speech_segments: deque = deque()
     consecutive_filler_segments = 0
@@ -60,6 +60,18 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     async def send_feedback(fb_type: str, message: str, **extra):
         if can_feedback(fb_type):
             await send_ws({"status": "feedback", "type": fb_type, "message": message, **extra})
+
+    async def stt_worker():
+        while True:
+            item = await stt_queue.get()
+            if item is None:
+                stt_queue.task_done()
+                break
+            audio_buffer, segment_sec, ts = item
+            await process_stt(audio_buffer, segment_sec, ts)
+            stt_queue.task_done()
+
+    worker_task = asyncio.create_task(stt_worker())
 
     async def process_stt(audio_buffer: np.ndarray, segment_sec: float, ts: float):
         nonlocal consecutive_filler_segments
@@ -141,6 +153,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             else:
                 if silence_start is None:
                     silence_start = now
+                    await send_ws({"status": "silence"})
 
                 silence_sec = round(now - silence_start, 2)
                 await set_voice_metric(session_id, question_id, "silence_sec", silence_sec)
@@ -151,18 +164,14 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                 if audio_chunks:
                     audio_buffer = np.concatenate(audio_chunks)
                     segment_sec = len(audio_buffer) / SAMPLE_RATE
-                    task = asyncio.create_task(process_stt(audio_buffer, segment_sec, now))
-                    background_tasks.add(task)
-                    task.add_done_callback(background_tasks.discard)
+                    await stt_queue.put((audio_buffer, segment_sec, now))
                     audio_chunks = []
-                else:
-                    await send_ws({"status": "silence"})
 
     except WebSocketDisconnect:
         is_connected = False
 
-        if background_tasks:
-            await asyncio.gather(*background_tasks, return_exceptions=True)
+        await stt_queue.put(None)
+        await worker_task
 
         # 마지막 침묵 구간 저장
         if silence_start is not None:
