@@ -1,10 +1,13 @@
 import io
 import json
+import logging
 import wave
 import numpy as np
 import httpx
 import webrtcvad
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 FRAME_DURATION = 30
@@ -63,7 +66,6 @@ async def transcribe_audio(audio: np.ndarray) -> str:
         },
     )
     if response.status_code != 200:
-        import logging
-        logging.getLogger(__name__).error(f"Clova 에러 응답: {response.text}")
+        logger.error(f"Clova 에러 응답: {response.text}")
         response.raise_for_status()
     return response.json().get("text", "")

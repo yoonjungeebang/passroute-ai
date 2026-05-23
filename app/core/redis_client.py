@@ -69,11 +69,11 @@ async def get_voice_summary(session_id: str, question_id: str) -> dict:
     filler_raw = await r.get(f"{prefix}:filler_count")
 
     avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
-    avg_silence = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
+    avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
     filler_count = int(filler_raw) if filler_raw else 0
 
     return {
         "avg_wpm": avg_wpm,
-        "silence_ratio": avg_silence,
+        "silence_ratio": avg_silence_duration,
         "filler_count": filler_count,
     }

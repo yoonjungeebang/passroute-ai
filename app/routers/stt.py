@@ -36,6 +36,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     await websocket.accept()
     audio_chunks = []
     ws_lock = asyncio.Lock()
+    background_tasks: list[asyncio.Task] = []
 
     speech_segments: deque = deque()
     consecutive_filler_segments = 0
@@ -135,7 +136,6 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     silence_start = None
 
                 audio_chunks.append(chunk)
-                await send_ws({"status": "recording"})
 
             else:
                 if silence_start is None:
@@ -150,13 +150,16 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                 if audio_chunks:
                     audio_buffer = np.concatenate(audio_chunks)
                     segment_sec = len(audio_buffer) / SAMPLE_RATE
-                    asyncio.create_task(process_stt(audio_buffer, segment_sec, now))
+                    background_tasks.append(asyncio.create_task(process_stt(audio_buffer, segment_sec, now)))
                     audio_chunks = []
                 else:
                     await send_ws({"status": "silence"})
 
     except WebSocketDisconnect:
         is_connected = False
+
+        if background_tasks:
+            await asyncio.gather(*background_tasks, return_exceptions=True)
 
         # 마지막 침묵 구간 저장
         if silence_start is not None:
@@ -194,7 +197,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
-                        {"stt_text": full_text, "session_id": int(session_id) if session_id.isdigit() else session_id, "question_id": int(question_id)},
+                        {"stt_text": full_text, "session_id": session_id, "question_id": int(question_id)},
                     )
                     await db.commit()
                 logger.info(f"[{session_id}:{question_id}] interview_answers MySQL 저장 완료")

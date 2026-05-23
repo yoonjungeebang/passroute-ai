@@ -7,18 +7,17 @@ from app.services.embedder import OnnxEmbedder
 from app.core.redis_client import init_redis, close_redis
 from app.services.stt_service import close_http_client
 from app.routers import stt, voice_analysis
-from app.routers import stt
 from app.routers.resume import router as resume_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_redis()
-    # app.state.chroma = chromadb.HttpClient(
-    #     host=settings.CHROMADB_HOST,
-    #     port=settings.CHROMADB_PORT,
-    # )
-    # app.state.embedder = OnnxEmbedder()
+    app.state.chroma = chromadb.HttpClient(
+        host=settings.CHROMADB_HOST,
+        port=settings.CHROMADB_PORT,
+    )
+    app.state.embedder = OnnxEmbedder()
     yield
     await close_redis()
     await close_http_client()
