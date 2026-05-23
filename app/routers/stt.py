@@ -16,6 +16,7 @@ from app.core.redis_client import (
     get_voice_summary,
     get_full_transcript,
 )
+from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
 from app.models.voice_analysis import VoiceAnalysis
 
@@ -34,6 +35,7 @@ CONSECUTIVE_FILLER_THRESHOLD = 3
 async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str):
     await websocket.accept()
     audio_chunks = []
+    ws_lock = asyncio.Lock()
 
     speech_segments: deque = deque()
     consecutive_filler_segments = 0
@@ -41,6 +43,10 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     silence_start: float | None = None
     last_feedback: dict = {}
     is_connected = True
+
+    async def send_ws(data: dict):
+        async with ws_lock:
+            await websocket.send_json(data)
 
     def can_feedback(fb_type: str) -> bool:
         now = time.time()
@@ -51,7 +57,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
     async def send_feedback(fb_type: str, message: str, **extra):
         if can_feedback(fb_type):
-            await websocket.send_json({"status": "feedback", "type": fb_type, "message": message, **extra})
+            await send_ws({"status": "feedback", "type": fb_type, "message": message, **extra})
 
     async def process_stt(audio_buffer: np.ndarray, segment_sec: float, ts: float):
         nonlocal consecutive_filler_segments
@@ -89,7 +95,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             if not is_connected:
                 return
 
-            await websocket.send_json({
+            await send_ws({
                 "status": "completed",
                 "text": text,
                 "session_id": session_id,
@@ -110,7 +116,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             logger.error(f"STT 에러: {e}")
             if is_connected:
                 try:
-                    await websocket.send_json({"status": "error", "message": str(e)})
+                    await send_ws({"status": "error", "message": str(e)})
                 except Exception:
                     pass
 
@@ -129,7 +135,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     silence_start = None
 
                 audio_chunks.append(chunk)
-                await websocket.send_json({"status": "recording"})
+                await send_ws({"status": "recording"})
 
             else:
                 if silence_start is None:
@@ -147,7 +153,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     asyncio.create_task(process_stt(audio_buffer, segment_sec, now))
                     audio_chunks = []
                 else:
-                    await websocket.send_json({"status": "silence"})
+                    await send_ws({"status": "silence"})
 
     except WebSocketDisconnect:
         is_connected = False
@@ -185,7 +191,6 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
         try:
             full_text = await get_full_transcript(session_id, question_id)
             if full_text and question_id.isdigit():
-                from sqlalchemy import text
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
