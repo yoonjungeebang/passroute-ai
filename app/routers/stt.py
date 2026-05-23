@@ -180,17 +180,20 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
         is_connected = False
         logger.error(f"WebSocket 루프 에러: {e}")
     finally:
-        # 마지막 침묵 구간 저장
-        if silence_start is not None:
-            silence_sec = round(time.time() - silence_start, 2)
-            if silence_sec > MIN_SILENCE_DURATION:
-                await rpush_voice_metric(session_id, question_id, "silence_values", silence_sec)
+        try:
+            # 마지막 침묵 구간 저장
+            if silence_start is not None:
+                silence_sec = round(time.time() - silence_start, 2)
+                if silence_sec > MIN_SILENCE_DURATION:
+                    await rpush_voice_metric(session_id, question_id, "silence_values", silence_sec)
 
-        # 마지막 음성 청크 → STT 큐에 넣어 WPM/필러워드 통계 반영
-        if audio_chunks:
-            audio_buffer = np.concatenate(audio_chunks)
-            segment_sec = len(audio_buffer) / SAMPLE_RATE
-            await stt_queue.put((audio_buffer, segment_sec, time.time()))
+            # 마지막 음성 청크 → STT 큐에 넣어 WPM/필러워드 통계 반영
+            if audio_chunks:
+                audio_buffer = np.concatenate(audio_chunks)
+                segment_sec = len(audio_buffer) / SAMPLE_RATE
+                await stt_queue.put((audio_buffer, segment_sec, time.time()))
+        except Exception as e:
+            logger.error(f"종료 전 메트릭 저장 에러: {e}")
 
         await stt_queue.put(None)
         await worker_task
