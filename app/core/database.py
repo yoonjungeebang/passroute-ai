@@ -1,10 +1,16 @@
+import os
+import ssl
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import settings
-import ssl
 
-# SSL 설정 (RDS 연결용)
-ssl_ctx = ssl.create_default_context(cafile="/app/global-bundle.pem")
+# SSL 설정 (RDS 연결용, 인증서 파일이 있을 때만 적용)
+_cert_path = settings.SSL_CERT_PATH
+if os.path.exists(_cert_path):
+    ssl_ctx = ssl.create_default_context(cafile=_cert_path)
+    connect_args = {"ssl": ssl_ctx}
+else:
+    connect_args = {}
 
 # 엔진 생성
 engine = create_async_engine(
@@ -13,7 +19,7 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
-    connect_args={"ssl": ssl_ctx}
+    connect_args=connect_args
 )
 
 # 세션 팩토리
