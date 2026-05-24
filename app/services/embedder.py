@@ -54,3 +54,13 @@ class OnnxEmbedder:
         # L2 정규화
         norm = max(float(np.linalg.norm(mean_embedding)), 1e-9)
         return (mean_embedding / norm).tolist()
+
+
+_instance: OnnxEmbedder | None = None
+
+
+def get_embedder() -> OnnxEmbedder:
+    global _instance
+    if _instance is None:
+        _instance = OnnxEmbedder()
+    return _instance
