@@ -6,7 +6,11 @@ class Settings(BaseSettings):
     
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
-
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    CLOVA_SECRET_KEY: str = ""
+    CLOVA_INVOKE_URL: str = ""
+    SSL_CERT_PATH: str = "/app/global-bundle.pem"
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "ap-northeast-2"

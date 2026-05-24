@@ -1,15 +1,23 @@
 import io
+import json
+import logging
 import wave
 import numpy as np
+import httpx
 import webrtcvad
-from openai import AsyncOpenAI
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 FRAME_DURATION = 30
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 vad = webrtcvad.Vad(3)
+_http_client = httpx.AsyncClient(timeout=30.0)
+
+
+async def close_http_client():
+    await _http_client.aclose()
 
 
 def detect_voice(audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bool:
@@ -41,12 +49,23 @@ def numpy_to_wav_bytes(audio: np.ndarray) -> bytes:
 async def transcribe_audio(audio: np.ndarray) -> str:
     if len(audio) < 500:
         return ""
-    audio_bytes = numpy_to_wav_bytes(audio)
-    data = ("audio.wav", audio_bytes, "audio/wav")
-    response = await client.audio.transcriptions.create(
-        model="whisper-1",
-        file=data,
-        language="ko",
-        response_format="text"
+
+    wav_bytes = numpy_to_wav_bytes(audio)
+    params = json.dumps({
+        "language": "ko-KR",
+        "completion": "sync",
+        "diarization": {"enable": False},
+    })
+
+    response = await _http_client.post(
+        f"{settings.CLOVA_INVOKE_URL}/recognizer/upload",
+        headers={"X-CLOVASPEECH-API-KEY": settings.CLOVA_SECRET_KEY},
+        files={
+            "media": ("audio.wav", wav_bytes, "audio/wav"),
+            "params": (None, params, "application/json"),
+        },
     )
-    return response
+    if response.status_code != 200:
+        logger.error(f"Clova 에러 응답: {response.text}")
+        response.raise_for_status()
+    return response.json().get("text", "")
