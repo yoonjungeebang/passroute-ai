@@ -31,7 +31,7 @@
     "valid_weights_sum": 1.0,
     "raw": 3.82,
     "percentage": 76,
-    "consistency_score": 0.85
+    "consistency_score": 0.80
   },
 
   "analysis": {
@@ -66,6 +66,16 @@
         "summary": {
           "strengths": "상황과 행동이 구체적으로 드러났습니다.",
           "improvements": "결과를 수치나 변화 중심으로 보완하면 더 좋습니다."
+        }
+      },
+      {
+        "question_index": 3,
+        "question_type": "technical",
+        "question": "데이터베이스 인덱스의 동작 원리와 사용 시 고려사항을 설명해주세요.",
+        "percentage": 78,
+        "summary": {
+          "strengths": "B-Tree 구조와 기본 동작 원리를 정확히 설명했습니다.",
+          "improvements": "인덱스 선택 기준과 트레이드오프를 추가하면 더 깊이 있는 답변이 됩니다."
         }
       }
     ],
