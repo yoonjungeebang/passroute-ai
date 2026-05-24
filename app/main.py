@@ -10,6 +10,7 @@ from app.core.redis_client import init_redis, close_redis
 from app.services.stt_service import close_http_client
 from app.routers import stt, voice_analysis
 from app.routers.resume import router as resume_router
+from app.routers.debate import router as debate_router
 
 
 @asynccontextmanager
@@ -41,6 +42,7 @@ app.include_router(follow_up_router)
 app.include_router(question_generate_router)
 
 app.include_router(resume_router)
+app.include_router(debate_router)
 
 
 @app.get("/health")
