@@ -1,0 +1,327 @@
+import json
+import re
+from pathlib import Path
+
+from fastapi import HTTPException
+from openai import OpenAIError
+
+from app.core.config import settings
+from app.schemas.debate import (
+    InterviewerOpeningRequest, InterviewerOpeningResponse,
+    DebateOpeningRequest, DebateOpeningResponse,
+    DebateRebuttalRequest, DebateRebuttalResponse,
+    DebateClosingRequest, DebateClosingResponse,
+    InterviewerClosingRequest, InterviewerClosingResponse,
+    DebateTurnEvalRequest, DebateTurnEvalResponse,
+    DebateScoreItemWithWeight, DebateTurnScores, DebateTurnEvalSummary,
+    DebateSessionSummaryRequest, DebateSessionSummaryResponse, TurnHighlight,
+    DebateReportRequest, DebateReportResponse, DebateWeaknessItem, DebateTurnFeedback,
+)
+from app.services.llm_service import _client, _parse_json
+
+
+# ── 프롬프트 캐싱 ──────────────────────────────────────────────────────────────
+
+_PROMPT_DIR = Path(__file__).parent.parent.parent / "prompts" / "debate"
+_PROMPTS: dict[str, tuple[str, str]] = {}
+
+
+def _load_prompts() -> None:
+    for md_file in _PROMPT_DIR.glob("*.md"):
+        content = md_file.read_text(encoding="utf-8")
+        parts = re.split(r"^## USER\s*$", content, flags=re.MULTILINE)
+        system = re.sub(r"^## SYSTEM\s*\n?", "", parts[0], flags=re.MULTILINE).strip()
+        user = parts[1].strip() if len(parts) > 1 else ""
+        _PROMPTS[md_file.stem] = (system, user)
+
+
+_load_prompts()
+
+
+# ── 상수 ──────────────────────────────────────────────────────────────────────
+
+_STANCE_LABELS = {"PRO": "찬성", "CON": "반대", "NEUTRAL": "중립"}
+_ROUND_LABELS = {
+    "OPENING": "입론",
+    "REBUTTAL_1": "반박 1",
+    "REBUTTAL_2": "반박 2",
+    "CLOSING": "마무리",
+    "MODERATION": "사회",
+}
+_DIFFICULTY_GUIDES = {
+    "EASY": "논거를 단순하게 제시하고 발언을 간결하게 유지한다.",
+    "NORMAL": "균형 있는 논리를 전개하며 적절한 근거를 제시한다.",
+    "HARD": "날카로운 반박과 구체적 근거를 제시하며 적극적으로 논점을 공략한다.",
+}
+_DEBATE_WEIGHTS: dict[str, float] = {
+    "logic": 0.35,
+    "rebuttal_quality": 0.30,
+    "consistency": 0.20,
+    "attitude": 0.15,
+}
+_ROUND_ACTIVE_FIELDS: dict[str, set[str]] = {
+    "OPENING":    {"logic", "attitude"},
+    "REBUTTAL_1": {"logic", "rebuttal_quality", "consistency", "attitude"},
+    "REBUTTAL_2": {"logic", "rebuttal_quality", "consistency", "attitude"},
+    "CLOSING":    {"logic", "consistency", "attitude"},
+    "MODERATION": {"logic", "attitude"},
+}
+
+
+# ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────
+
+def _fill_template(template: str, variables: dict) -> str:
+    """변수 치환 후 {{ }} 이스케이프 해제."""
+    for key, value in variables.items():
+        template = template.replace("{" + key + "}", str(value))
+    return template.replace("{{", "{").replace("}}", "}")
+
+
+def _format_history(history) -> str:
+    if not history:
+        return "없음"
+    lines = []
+    for turn in history:
+        speaker = {
+            "USER": "사용자",
+            "AI_COMPETITOR": "AI 경쟁자",
+            "AI_INTERVIEWER": "면접관",
+        }.get(turn.speaker_type, turn.speaker_type)
+        lines.append(f"[{speaker} - {_ROUND_LABELS.get(turn.round_type, turn.round_type)}] {turn.content}")
+    return "\n".join(lines)
+
+
+def _format_list(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
+
+
+async def _call(
+    prompt_key: str,
+    variables: dict,
+    max_tokens: int,
+    timeout: float,
+    model: str | None = None,
+) -> dict:
+    system_tpl, user_tpl = _PROMPTS[prompt_key]
+    try:
+        response = await _client.responses.create(
+            model=model or settings.OPENAI_MODEL,
+            instructions=_fill_template(system_tpl, variables),
+            input=_fill_template(user_tpl, variables),
+            max_output_tokens=max_tokens,
+            text={"format": {"type": "json_object"}},
+            timeout=timeout,
+        )
+        return _parse_json(response.output_text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"LLM 응답 파싱 실패: {e}")
+    except OpenAIError as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI 호출 실패: {e}")
+
+
+def _renormalize_and_score(
+    raw_scores: dict, round_type: str
+) -> tuple[DebateTurnScores, float]:
+    active = _ROUND_ACTIVE_FIELDS.get(round_type, {"logic", "attitude"})
+    total_weight = sum(_DEBATE_WEIGHTS[f] for f in active)
+    scores_data: dict = {}
+    weighted_sum = 0.0
+    for field in ("logic", "rebuttal_quality", "consistency", "attitude"):
+        raw = raw_scores.get(field)
+        if field in active and raw and raw.get("score") is not None:
+            norm_w = _DEBATE_WEIGHTS[field] / total_weight
+            scores_data[field] = DebateScoreItemWithWeight(
+                score=raw["score"], weight=round(norm_w, 4), feedback=raw["feedback"]
+            )
+            weighted_sum += raw["score"] * norm_w
+        else:
+            scores_data[field] = None
+    return DebateTurnScores(**scores_data), round(weighted_sum * 20, 2)
+
+
+# ── 발화 생성 5개 (model=OPENAI_MODEL_DEBATE) ─────────────────────────────────
+
+async def generate_interviewer_opening(req: InterviewerOpeningRequest) -> InterviewerOpeningResponse:
+    raw = await _call(
+        "interviewer_opening",
+        {
+            "topic_title": req.topic_title,
+            "topic_description": req.topic_description,
+            "user_stance_label": _STANCE_LABELS[req.user_stance],
+            "ai_stance_label": _STANCE_LABELS[req.ai_stance],
+            "difficulty": req.difficulty,
+            "pro_key_points_text": _format_list(req.pro_key_points),
+            "con_key_points_text": _format_list(req.con_key_points),
+        },
+        max_tokens=512,
+        timeout=settings.DEBATE_GENERATION_TIMEOUT,
+        model=settings.OPENAI_MODEL_DEBATE,
+    )
+    return InterviewerOpeningResponse(content=raw["content"])
+
+
+async def generate_competitor_opening(req: DebateOpeningRequest) -> DebateOpeningResponse:
+    my_points = req.pro_key_points if req.stance == "PRO" else req.con_key_points
+    opp_points = req.con_key_points if req.stance == "PRO" else req.pro_key_points
+    raw = await _call(
+        "competitor_opening",
+        {
+            "name": req.persona.name,
+            "background": req.persona.background,
+            "persona_system_prompt": req.persona.system_prompt_template,
+            "topic_title": req.topic_title,
+            "stance_label": _STANCE_LABELS[req.stance],
+            "my_key_points_text": _format_list(my_points),
+            "opponent_key_points_text": _format_list(opp_points),
+            "difficulty": req.difficulty,
+            "difficulty_guide": _DIFFICULTY_GUIDES[req.difficulty],
+        },
+        max_tokens=512,
+        timeout=settings.DEBATE_GENERATION_TIMEOUT,
+        model=settings.OPENAI_MODEL_DEBATE,
+    )
+    return DebateOpeningResponse(content=raw["content"])
+
+
+async def generate_competitor_rebuttal(req: DebateRebuttalRequest) -> DebateRebuttalResponse:
+    raw = await _call(
+        "competitor_rebuttal",
+        {
+            "name": req.persona.name,
+            "background": req.persona.background,
+            "persona_system_prompt": req.persona.system_prompt_template,
+            "topic_title": req.topic_title,
+            "stance_label": _STANCE_LABELS[req.stance],
+            "rebuttal_round_label": _ROUND_LABELS[req.rebuttal_round],
+            "opponent_latest_turn": req.opponent_latest_turn,
+            "history_text": _format_history(req.history),
+            "difficulty": req.difficulty,
+            "difficulty_guide": _DIFFICULTY_GUIDES[req.difficulty],
+        },
+        max_tokens=512,
+        timeout=settings.DEBATE_GENERATION_TIMEOUT,
+        model=settings.OPENAI_MODEL_DEBATE,
+    )
+    return DebateRebuttalResponse(content=raw["content"])
+
+
+async def generate_competitor_closing(req: DebateClosingRequest) -> DebateClosingResponse:
+    raw = await _call(
+        "competitor_closing",
+        {
+            "name": req.persona.name,
+            "background": req.persona.background,
+            "persona_system_prompt": req.persona.system_prompt_template,
+            "topic_title": req.topic_title,
+            "stance_label": _STANCE_LABELS[req.stance],
+            "history_text": _format_history(req.history),
+            "difficulty": req.difficulty,
+            "difficulty_guide": _DIFFICULTY_GUIDES[req.difficulty],
+        },
+        max_tokens=512,
+        timeout=settings.DEBATE_GENERATION_TIMEOUT,
+        model=settings.OPENAI_MODEL_DEBATE,
+    )
+    return DebateClosingResponse(content=raw["content"])
+
+
+async def generate_interviewer_closing(req: InterviewerClosingRequest) -> InterviewerClosingResponse:
+    raw = await _call(
+        "interviewer_closing",
+        {
+            "topic_title": req.topic_title,
+            "history_text": _format_history(req.history),
+        },
+        max_tokens=384,
+        timeout=settings.DEBATE_GENERATION_TIMEOUT,
+        model=settings.OPENAI_MODEL_DEBATE,
+    )
+    return InterviewerClosingResponse(content=raw["content"])
+
+
+# ── 평가/요약/리포트 (model=OPENAI_MODEL 기본값) ──────────────────────────────
+
+async def evaluate_debate_turn(req: DebateTurnEvalRequest) -> DebateTurnEvalResponse:
+    raw = await _call(
+        "evaluate_turn",
+        {
+            "topic_title": req.topic_title,
+            "user_stance_label": _STANCE_LABELS[req.user_stance],
+            "round_label": _ROUND_LABELS.get(req.round_type, req.round_type),
+            "opponent_previous_turn_text": req.opponent_previous_turn or "없음 (첫 발언)",
+            "user_content": req.user_content,
+            "history_text": _format_history(req.history),
+            "round_type": req.round_type,
+        },
+        max_tokens=1024,
+        timeout=settings.DEBATE_EVAL_TIMEOUT,
+    )
+    scores, weighted_score = _renormalize_and_score(raw["scores"], req.round_type)
+    return DebateTurnEvalResponse(
+        scores=scores,
+        weighted_score=weighted_score,
+        summary=DebateTurnEvalSummary(**raw["summary"]),
+    )
+
+
+async def generate_debate_session_summary(
+    req: DebateSessionSummaryRequest,
+) -> DebateSessionSummaryResponse:
+    raw = await _call(
+        "session_summary",
+        {
+            "topic_title": req.topic_title,
+            "user_stance_label": _STANCE_LABELS[req.user_stance],
+            "difficulty": req.difficulty,
+            "persona_name": req.persona_name,
+            "turn_evaluations_json": json.dumps(
+                [t.model_dump() for t in req.turn_evaluations], ensure_ascii=False, indent=2
+            ),
+            "ai_competitor_turns_json": json.dumps(
+                req.ai_competitor_turns, ensure_ascii=False, indent=2
+            ),
+        },
+        max_tokens=1024,
+        timeout=settings.DEBATE_EVAL_TIMEOUT,
+    )
+    return DebateSessionSummaryResponse(
+        overall=raw["overall"],
+        strengths=raw["strengths"],
+        improvements=raw["improvements"],
+        strategy_feedback=raw["strategy_feedback"],
+        turn_highlights=[TurnHighlight(**h) for h in raw["turn_highlights"]],
+    )
+
+
+async def generate_debate_report(req: DebateReportRequest) -> DebateReportResponse:
+    scores = [t.weighted_score for t in req.turn_evaluations]
+    avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
+    raw = await _call(
+        "report",
+        {
+            "topic_title": req.topic_title,
+            "user_stance_label": _STANCE_LABELS[req.user_stance],
+            "difficulty": req.difficulty,
+            "persona_name": req.persona_name,
+            "turn_evaluations_json": json.dumps(
+                [t.model_dump() for t in req.turn_evaluations], ensure_ascii=False, indent=2
+            ),
+            "session_summary_json": json.dumps(
+                req.session_summary.model_dump(), ensure_ascii=False, indent=2
+            ),
+            "average_weighted_score": avg_score,
+        },
+        max_tokens=2048,
+        timeout=settings.DEBATE_EVAL_TIMEOUT,
+    )
+    return DebateReportResponse(
+        overall=raw["overall"],
+        strengths=raw["strengths"],
+        weaknesses=[DebateWeaknessItem(**w) for w in raw["weaknesses"]],
+        improvements=raw["improvements"],
+        turn_feedback=[DebateTurnFeedback(**t) for t in raw["turn_feedback"]],
+        strategy_analysis=raw["strategy_analysis"],
+        recommended_topics=raw["recommended_topics"],
+        final_advice=raw["final_advice"],
+        debate_readiness_comment=raw["debate_readiness_comment"],
+    )
