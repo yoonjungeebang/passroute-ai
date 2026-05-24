@@ -79,7 +79,6 @@ class DisabilitySchema(BaseModel):
     status: bool = False
     detail: Optional[str] = None
 
-
 class ResumeStructured(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
