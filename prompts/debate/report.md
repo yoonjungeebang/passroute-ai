@@ -42,7 +42,7 @@ JSON 형식으로만 반환합니다.
 - recommended_topics: 이번 세션의 약점·부족한 라운드를 바탕으로 다음 연습에
   적합한 IT 이슈 토론 주제 3개. 주제 텍스트만 문자열로 반환.
 - final_advice: 다음 토론 준비를 위한 핵심 조언 1~2문장. 구체적 행동을 명시.
-- debate_readiness_comment: turn_evaluations의 weighted_score 평균을 기준으로 판단.
+- debate_readiness_comment: 제공된 평균 점수({average_weighted_score})를 기준으로 판단.
   · 75 이상: 토론 준비가 잘 되어 있음
   · 55~75: 일부 보완 필요
   · 55 미만: 전반적 보완 필요
@@ -57,7 +57,7 @@ JSON만 반환:
   "turn_feedback": [
     {{
       "round_type": "OPENING",
-      "weighted_score": 숫자,  // ⚠️ 입력 turn_evaluations에서 그대로 복사. 재계산 금지.
+      "weighted_score": 숫자,
       "feedback": "인사이트 중심 1~2문장"
     }}
   ],
