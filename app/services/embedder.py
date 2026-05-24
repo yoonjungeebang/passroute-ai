@@ -2,7 +2,9 @@ import numpy as np
 import onnxruntime as ort
 from transformers import AutoTokenizer
 
-MODELS_DIR = "/app/models"
+from app.core.config import settings
+
+MODELS_DIR = settings.MODELS_DIR
 ONNX_MODEL_PATH = f"{MODELS_DIR}/kr-sbert-uint8.onnx"
 TOKENIZER_PATH = f"{MODELS_DIR}/tokenizer"
 MAX_TOKEN_LENGTH = 512
@@ -52,3 +54,13 @@ class OnnxEmbedder:
         # L2 정규화
         norm = max(float(np.linalg.norm(mean_embedding)), 1e-9)
         return (mean_embedding / norm).tolist()
+
+
+_instance: OnnxEmbedder | None = None
+
+
+def get_embedder() -> OnnxEmbedder:
+    global _instance
+    if _instance is None:
+        _instance = OnnxEmbedder()
+    return _instance
