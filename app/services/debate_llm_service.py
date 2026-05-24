@@ -71,10 +71,12 @@ _ROUND_ACTIVE_FIELDS: dict[str, set[str]] = {
 # ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────
 
 def _fill_template(template: str, variables: dict) -> str:
-    """변수 치환 후 {{ }} 이스케이프 해제."""
-    for key, value in variables.items():
-        template = template.replace("{" + key + "}", str(value))
-    return template.replace("{{", "{").replace("}}", "}")
+    """변수 치환 후 {{ }} 이스케이프 해제. 2차 치환 방지를 위해 단일 패스 처리."""
+    if not variables:
+        return template.replace("{{", "{").replace("}}", "}")
+    pattern = re.compile("|".join(re.escape("{" + k + "}") for k in variables))
+    result = pattern.sub(lambda m: str(variables[m.group()[1:-1]]), template)
+    return result.replace("{{", "{").replace("}}", "}")
 
 
 def _format_history(history) -> str:
@@ -102,6 +104,8 @@ async def _call(
     timeout: float,
     model: str | None = None,
 ) -> dict:
+    if prompt_key not in _PROMPTS:
+        raise HTTPException(status_code=500, detail=f"프롬프트 설정을 찾을 수 없습니다: {prompt_key}")
     system_tpl, user_tpl = _PROMPTS[prompt_key]
     try:
         response = await _client.responses.create(
@@ -131,7 +135,7 @@ def _renormalize_and_score(
         if field in active and raw and raw.get("score") is not None:
             norm_w = _DEBATE_WEIGHTS[field] / total_weight
             scores_data[field] = DebateScoreItemWithWeight(
-                score=raw["score"], weight=round(norm_w, 4), feedback=raw["feedback"]
+                score=raw.get("score", 0), weight=round(norm_w, 4), feedback=raw.get("feedback", "")
             )
             weighted_sum += raw["score"] * norm_w
         else:
