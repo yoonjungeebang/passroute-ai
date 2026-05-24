@@ -130,7 +130,13 @@ JSON만 반환:
         max_output_tokens=2048,
     )
 
-    llm_scores = LLMScores(**raw["llm_scores"])
+    scores_raw = raw["llm_scores"]
+    for field in ("accuracy", "depth", "authenticity", "growth"):
+        val = scores_raw.get(field)
+        if isinstance(val, dict) and val.get("score") is None:
+            scores_raw[field] = None
+
+    llm_scores = LLMScores(**scores_raw)
     summary = EvaluationSummary(**raw["summary"])
     return QuestionEvaluationResponse(
         llm_scores=_merge_weights(llm_scores, req.question_type),
