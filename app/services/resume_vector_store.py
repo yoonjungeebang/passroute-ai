@@ -3,12 +3,12 @@ from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
-from app.services.embedder import OnnxEmbedder
+from app.services.embedder import get_embedder
 
 
 class OnnxEmbeddingFunction(EmbeddingFunction):
     def __init__(self):
-        self._embedder = OnnxEmbedder()
+        self._embedder = get_embedder()
 
     def __call__(self, input: Documents) -> Embeddings:
         return [self._embedder.embed(text) for text in input]

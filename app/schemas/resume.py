@@ -68,6 +68,17 @@ class MilitarySchema(BaseModel):
     end_date: Optional[str] = None
 
 
+class OverseasExperienceSchema(BaseModel):
+    country: str
+    purpose: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class DisabilitySchema(BaseModel):
+    status: bool = False
+    detail: Optional[str] = None
+
 class ResumeStructured(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
@@ -97,15 +108,3 @@ class ResumeProcessResponse(BaseModel):
     overseas_experience: list[OverseasExperienceSchema] = []
     disability: Optional[DisabilitySchema] = None
     driving_license: Optional[str] = None
-    
-    
-class OverseasExperienceSchema(BaseModel):
-    country: str
-    purpose: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-
-
-class DisabilitySchema(BaseModel):
-    status: bool = False
-    detail: Optional[str] = None

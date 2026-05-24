@@ -1,4 +1,5 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from app.services.resume_parser import parse_resume
 from app.services.resume_vector_store import store_resume, search_candidates
@@ -10,8 +11,8 @@ router = APIRouter(prefix="/resume", tags=["resume"])
 async def process_resume(user_id: str, file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
-        raw_text = parse_resume(file_bytes, file.filename)
-        store_resume(user_id, raw_text)
+        raw_text = await run_in_threadpool(parse_resume, file_bytes, file.filename)
+        await run_in_threadpool(store_resume, user_id, raw_text)
 
         return {"status": "success", "user_id": user_id}
 
