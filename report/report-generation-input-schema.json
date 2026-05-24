@@ -1,0 +1,77 @@
+{
+  "_comment": "리포트 생성 체인 입력 스키마. Spring에서 조합하여 FastAPI로 전달.",
+
+  "job_title": "백엔드 개발자",
+  "company_name": "카카오",
+
+  "question_evaluations": [
+    {
+      "_comment": "질문 단위 평가 결과에서 추출. LLM이 필요한 필드만 포함.",
+      "question_index": 1,
+      "question_type": "technical",
+      "question": "RESTful API 설계 원칙에 대해 설명해주세요.",
+      "percentage": 65,
+      "summary": {
+        "strengths": "기술 개념은 대체로 정확하게 설명했습니다.",
+        "improvements": "답변이 나열식이라 논리적 흐름 보완이 필요합니다."
+      },
+      "star_evaluation": {
+        "applicable": false,
+        "star_score": null
+      },
+      "voice_feedback": "필러워드 5회 감지됨. 군더더기 표현을 줄이면 전달력이 향상될 것 같습니다."
+    },
+    {
+      "question_index": 2,
+      "question_type": "personality",
+      "question": "협업 과정에서 갈등을 해결한 경험을 말해주세요.",
+      "percentage": 85,
+      "summary": {
+        "strengths": "상황과 행동이 구체적으로 드러났습니다.",
+        "improvements": "결과를 수치나 변화 중심으로 보완하면 더 좋습니다."
+      },
+      "star_evaluation": {
+        "applicable": true,
+        "star_score": 3
+      },
+      "voice_feedback": null
+    }
+  ],
+
+  "session_result": {
+    "_comment": "session-evaluation-schema.json에서 추출.",
+    "percentage": 76,
+    "consistency_score": 0.80,
+    "item_averages": {
+      "relevance":     { "avg": 4.3, "evaluated_count": 2 },
+      "logic":         { "avg": 3.0, "evaluated_count": 2 },
+      "specificity":   { "avg": 4.0, "evaluated_count": 2 },
+      "conciseness":   { "avg": 2.8, "evaluated_count": 2 },
+      "clarity":       { "avg": 3.7, "evaluated_count": 2 },
+      "accuracy":      { "avg": 4.5, "evaluated_count": 1 },
+      "depth":         { "avg": 3.0, "evaluated_count": 1 },
+      "job_relevance": { "avg": 3.7, "evaluated_count": 2 },
+      "authenticity":  { "avg": 4.5, "evaluated_count": 1 },
+      "growth":        { "avg": 4.0, "evaluated_count": 1 }
+    },
+    "key_weakness": ["논리성", "간결성"],
+    "interview_readiness": {
+      "decision": "READY",
+      "reason": "기술 정확성과 구체성은 높으나 논리성과 간결성이 반복적으로 낮음"
+    }
+  },
+
+  "voice_highlight": {
+    "_comment": "윤지님 파트에서 생성. 음성/영상 기반 하이라이트 구간. 미정 시 null 허용.",
+    "best_moment": {
+      "question_index": 2,
+      "timestamp_range": "00:01:23 ~ 00:01:45",
+      "reason": "답변 구조가 명확하고 자신감 있는 발화"
+    },
+    "improvement_moment": {
+      "question_index": 1,
+      "timestamp_range": "00:00:10 ~ 00:00:35",
+      "reason": "필러워드 빈도 높고 발화 속도가 불규칙함"
+    }
+  }
+}

@@ -43,8 +43,8 @@ JSON만 반환:
 {{
   "scores": {{
     "logic":            {{"score": 정수, "feedback": ""}},
-    "rebuttal_quality": {{"score": 정수, "feedback": ""}} 또는 null,
-    "consistency":      {{"score": 정수, "feedback": ""}} 또는 null,
+    "rebuttal_quality": {{"score": 정수, "feedback": ""}},
+    "consistency":      {{"score": 정수, "feedback": ""}},
     "attitude":         {{"score": 정수, "feedback": ""}}
   }},
   "summary": {{
