@@ -71,6 +71,7 @@ jobs:
             EOF
             docker compose pull
             docker compose up -d
+            docker image prune -af
         env:
           ECR_PASSWORD: ${{ steps.ecr-password.outputs.password }}
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
