@@ -176,9 +176,13 @@ async def analyze_answer(state: FollowUpState) -> dict:
             ],
             timeout=15.0,
         )
-        raw = response.choices[0].message.content.strip()
-        analysis = json.loads(raw)
-    except (APITimeoutError, APIError, json.JSONDecodeError, KeyError) as e:
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("Empty response content")
+        analysis = json.loads(content.strip())
+        if not isinstance(analysis, dict):
+            raise ValueError("Response is not a JSON object")
+    except (APITimeoutError, APIError, json.JSONDecodeError, KeyError, IndexError, AttributeError, ValueError) as e:
         logger.warning("답변 분석 실패, 기본값 사용: %s", e)
         analysis = {
             "quality": "partial",
@@ -200,6 +204,20 @@ _SOURCE_FILTER: dict[str, list[str]] = {
     "personality": ["jobkorea"],
 }
 
+_crawled_collection = None
+
+
+def _get_crawled_collection():
+    """job_descriptions 컬렉션을 캐싱하여 반환한다."""
+    global _crawled_collection
+    if _crawled_collection is None:
+        _crawled_collection = _get_client().get_or_create_collection(
+            name="job_descriptions",
+            embedding_function=_get_embedding_fn(),
+            metadata={"hnsw:space": "cosine"},
+        )
+    return _crawled_collection
+
 
 def _query_resume(user_id: str, search_query: str) -> str:
     """ChromaDB resumes 컬렉션에서 이력서 청크를 검색한다."""
@@ -219,11 +237,7 @@ def _query_resume(user_id: str, search_query: str) -> str:
 
 def _query_crawled_data(search_query: str, sources: list[str]) -> str:
     """ChromaDB job_descriptions 컬렉션에서 크롤링 데이터를 검색한다."""
-    collection = _get_client().get_or_create_collection(
-        name="job_descriptions",
-        embedding_function=_get_embedding_fn(),
-        metadata={"hnsw:space": "cosine"},
-    )
+    collection = _get_crawled_collection()
 
     where_filter = {"source": {"$in": sources}} if len(sources) > 1 else {"source": sources[0]}
 
@@ -327,8 +341,10 @@ async def generate_question(state: FollowUpState) -> dict:
             ],
             timeout=15.0,
         )
-        raw = response.choices[0].message.content.strip()
-        parsed = json.loads(raw)
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("Empty response content")
+        parsed = json.loads(content.strip())
         result = FollowUpResponse(
             has_follow_up=parsed["has_follow_up"],
             follow_up_question=parsed.get("follow_up_question"),
@@ -344,7 +360,7 @@ async def generate_question(state: FollowUpState) -> dict:
         result = FollowUpResponse(
             has_follow_up=False, reason="AI 서비스 호출 실패"
         )
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
+    except (json.JSONDecodeError, KeyError, TypeError, IndexError, AttributeError, ValueError) as e:
         logger.error("꼬리 질문 응답 파싱 실패: %s", e)
         result = FollowUpResponse(
             has_follow_up=False, reason="AI 응답 파싱 실패"
