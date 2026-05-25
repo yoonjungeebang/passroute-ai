@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "snunlp/KR-SBERT-V40K-klueNLI-augSTS"
     MODELS_DIR: str = "/app/models"
     
+    # 토론 면접 모델 / 타임아웃
+    OPENAI_MODEL_DEBATE: str = "gpt-4o"
+    DEBATE_GENERATION_TIMEOUT: float = 120.0
+    DEBATE_EVAL_TIMEOUT: float = 60.0
+
     # SQL 로그 출력 여부 (운영 환경에서는 False)
     SQL_ECHO: bool = False
 

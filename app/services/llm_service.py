@@ -51,15 +51,24 @@ def _parse_json(text: str) -> dict:
         text = re.sub(r'\n?```\s*$', '', text)
     return json.loads(text.strip())
 
-async def _call_llm_json(system_prompt: str, user_prompt: str, max_output_tokens: int) -> dict:
+async def _call_llm_json(
+    system_prompt: str,
+    user_prompt: str,
+    max_output_tokens: int,
+    timeout: float | None = None,
+    model: str | None = None,
+) -> dict:
     try:
-        response = await _client.responses.create(
-            model=settings.OPENAI_MODEL,
+        kwargs: dict = dict(
+            model=model or settings.OPENAI_MODEL,
             instructions=system_prompt,
             input=user_prompt,
             max_output_tokens=max_output_tokens,
             text={"format": {"type": "json_object"}},
         )
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        response = await _client.responses.create(**kwargs)
         return _parse_json(response.output_text)
 
     except json.JSONDecodeError as e:
