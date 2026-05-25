@@ -1,24 +1,52 @@
+import asyncio
 import json
 import logging
+from typing import TypedDict
 
+from langgraph.graph import END, StateGraph
 from openai import APIError, APITimeoutError, AsyncOpenAI
 
 from app.core.config import settings
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
+from app.services.resume_vector_store import _get_collection, _get_client, _get_embedding_fn
 
 logger = logging.getLogger(__name__)
 
 _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-SYSTEM_PROMPT = """\
+# ──────────────────────────────────────────────
+# 프롬프트
+# ──────────────────────────────────────────────
+
+ANALYSIS_PROMPT = """\
+당신은 면접 답변 분석 전문가입니다.
+지원자의 답변을 분석하여 답변 품질과 핵심 키워드를 추출하세요.
+
+## 분석 기준
+- 답변의 구체성, 깊이, 논리적 완성도를 평가
+- 답변에서 언급된 기술/경험/개념의 핵심 키워드를 추출
+- 답변에서 빠졌거나 부족한 영역을 식별
+
+## 응답 형식
+반드시 아래 JSON 형식으로만 응답하세요.
+{
+  "quality": "sufficient" 또는 "insufficient" 또는 "partial",
+  "keywords": ["키워드1", "키워드2", ...],
+  "weak_points": ["부족한 부분1", "부족한 부분2", ...],
+  "summary": "답변 분석 요약 (1~2문장)"
+}\
+"""
+
+FOLLOWUP_PROMPT = """\
 당신은 개발자 채용 면접관입니다.
-지원자의 답변을 분석하여 꼬리 질문이 필요한지 판단하고, 필요하다면 꼬리 질문을 생성하세요.
+지원자의 답변과 분석 결과, 그리고 이력서 정보를 종합하여 꼬리 질문이 필요한지 판단하고, 필요하다면 꼬리 질문을 생성하세요.
 
 ## 꼬리 질문을 생성해야 하는 경우
 - 답변이 모호하거나 피상적이어서 구체적인 확인이 필요한 경우
 - 기술적 깊이를 더 확인해야 하는 경우 (예: 원리, 트레이드오프, 대안)
 - 실제 경험을 검증해야 하는 경우 (예: 구체적 사례, 수치, 결과)
 - 답변에 논리적 허점이나 모순이 있는 경우
+- 이력서에 적힌 경험과 답변 사이에 괴리가 있는 경우
 
 ## 꼬리 질문을 생성하지 않아야 하는 경우
 - 답변이 이미 충분히 구체적이고 깊이가 있는 경우
@@ -30,6 +58,17 @@ SYSTEM_PROMPT = """\
 - low: 기본 개념 확인 수준. 답변이 핵심만 담고 있으면 꼬리 질문 불필요
 - middle: 개념 + 적용 경험 확인. 경험이나 구체적 사례가 빠지면 꼬리 질문 생성
 - high: 깊은 이해 + 트레이드오프 + 대안 제시까지 기대. 표면적 답변이면 반드시 꼬리 질문 생성
+
+## 이력서 활용 지침
+- 이력서 정보가 제공되면, 지원자가 실제로 경험했다고 주장하는 내용과 답변을 대조하세요
+- 이력서에 관련 경험이 있는데 답변에서 언급하지 않았다면, 해당 경험을 끌어내는 꼬리 질문을 생성하세요
+- 이력서 정보가 없더라도 답변 자체의 품질만으로 판단하세요
+
+## 업계 참고 자료 활용 지침
+- 채용공고, 기술블로그, 뉴스 등의 참고 자료가 제공되면, 업계에서 실제로 요구하는 역량과 답변을 대조하세요
+- 채용공고에서 요구하는 기술을 답변에서 언급했지만 깊이가 부족하면, 해당 기술의 실무 적용 경험을 묻는 꼬리 질문을 생성하세요
+- 기술블로그의 트렌드와 관련된 답변이라면, 최신 동향에 대한 이해도를 확인하는 꼬리 질문을 생성하세요
+- 참고 자료가 없더라도 답변 자체의 품질만으로 판단하세요
 
 ## 응답 형식
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 포함하지 마세요.
@@ -52,8 +91,29 @@ INTERVIEW_TYPE_LABELS = {
 }
 
 
-def _build_user_message(request: FollowUpRequest) -> str:
-    """OpenAI에 전달할 사용자 메시지를 구성한다."""
+# ──────────────────────────────────────────────
+# LangGraph 상태 정의
+# ──────────────────────────────────────────────
+
+class FollowUpState(TypedDict):
+    request: FollowUpRequest
+    user_message: str
+    analysis: dict
+    resume_context: str
+    crawled_context: str
+    response: FollowUpResponse
+
+
+# ──────────────────────────────────────────────
+# 유틸리티
+# ──────────────────────────────────────────────
+
+async def _noop() -> str:
+    return ""
+
+
+def _build_conversation_text(request: FollowUpRequest) -> str:
+    """대화 이력을 텍스트로 구성한다."""
     interview_type = INTERVIEW_TYPE_LABELS[request.interview_type]
     difficulty = DIFFICULTY_LABELS[request.difficulty]
 
@@ -70,15 +130,162 @@ def _build_user_message(request: FollowUpRequest) -> str:
     return "\n".join(parts)
 
 
-async def generate_follow_up(
-    request: FollowUpRequest,
-) -> FollowUpResponse:
-    """꼬리 질문을 생성한다.
+# ──────────────────────────────────────────────
+# 노드 1: 답변 분석 (LLM 호출)
+# ──────────────────────────────────────────────
 
-    OpenAI가 답변의 적합성을 판단하여 꼬리 질문 생성 여부를 결정한다.
-    스킵 판단과 턴 제한은 Spring 서버에서 사전 처리한다.
-    """
-    user_message = _build_user_message(request)
+async def analyze_answer(state: FollowUpState) -> dict:
+    """답변 품질을 분석하고 핵심 키워드를 추출한다."""
+    user_message = state["user_message"]
+
+    try:
+        response = await _client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            max_tokens=512,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": ANALYSIS_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            timeout=15.0,
+        )
+        raw = response.choices[0].message.content.strip()
+        analysis = json.loads(raw)
+    except (APITimeoutError, APIError, json.JSONDecodeError, KeyError) as e:
+        logger.warning("답변 분석 실패, 기본값 사용: %s", e)
+        analysis = {
+            "quality": "partial",
+            "keywords": [],
+            "weak_points": [],
+            "summary": "분석 불가",
+        }
+
+    return {"analysis": analysis}
+
+
+# ──────────────────────────────────────────────
+# 노드 2: ChromaDB 검색 (이력서 + 크롤링 데이터)
+# ──────────────────────────────────────────────
+
+# 면접 유형별 검색할 크롤링 데이터 source
+_SOURCE_FILTER: dict[str, list[str]] = {
+    "technical": ["tech_blog", "jobkorea"],
+    "personality": ["jobkorea"],
+}
+
+
+def _query_resume(user_id: str, search_query: str) -> str:
+    """ChromaDB resumes 컬렉션에서 이력서 청크를 검색한다."""
+    collection = _get_collection()
+    results = collection.query(
+        query_texts=[search_query],
+        n_results=3,
+        where={"user_id": user_id},
+    )
+
+    documents = results.get("documents", [[]])[0]
+    if not documents:
+        return ""
+
+    return "\n".join(f"- {doc[:300]}" for doc in documents)
+
+
+def _query_crawled_data(search_query: str, sources: list[str]) -> str:
+    """ChromaDB job_descriptions 컬렉션에서 크롤링 데이터를 검색한다."""
+    collection = _get_client().get_or_create_collection(
+        name="job_descriptions",
+        embedding_function=_get_embedding_fn(),
+        metadata={"hnsw:space": "cosine"},
+    )
+
+    where_filter = {"source": {"$in": sources}} if len(sources) > 1 else {"source": sources[0]}
+
+    results = collection.query(
+        query_texts=[search_query],
+        n_results=3,
+        where=where_filter,
+    )
+
+    documents = results.get("documents", [[]])[0]
+    metadatas = results.get("metadatas", [[]])[0]
+    if not documents:
+        return ""
+
+    parts = []
+    for doc, meta in zip(documents, metadatas):
+        source = meta.get("source", "")
+        title = meta.get("title", "")
+        label = {"tech_blog": "기술블로그", "jobkorea": "채용공고", "naver_news": "뉴스"}.get(source, source)
+        parts.append(f"- [{label}] {title}: {doc[:300]}")
+
+    return "\n".join(parts)
+
+
+async def search_context(state: FollowUpState) -> dict:
+    """이력서와 크롤링 데이터를 ChromaDB에서 병렬 검색한다."""
+    request = state["request"]
+    analysis = state["analysis"]
+
+    keywords = analysis.get("keywords", [])
+    if not keywords:
+        return {"resume_context": "", "crawled_context": ""}
+
+    search_query = " ".join(keywords)
+    sources = _SOURCE_FILTER.get(request.interview_type, ["jobkorea"])
+
+    # 이력서 + 크롤링 데이터 병렬 검색
+    resume_task = (
+        asyncio.to_thread(_query_resume, request.user_id, search_query)
+        if request.user_id
+        else _noop()
+    )
+    crawled_task = asyncio.to_thread(_query_crawled_data, search_query, sources)
+
+    results = await asyncio.gather(resume_task, crawled_task, return_exceptions=True)
+
+    resume_context = results[0] if not isinstance(results[0], Exception) else ""
+    crawled_context = results[1] if not isinstance(results[1], Exception) else ""
+
+    if isinstance(results[0], Exception):
+        logger.warning("이력서 검색 실패: %s", results[0])
+    if isinstance(results[1], Exception):
+        logger.warning("크롤링 데이터 검색 실패: %s", results[1])
+
+    return {"resume_context": resume_context, "crawled_context": crawled_context}
+
+
+# ──────────────────────────────────────────────
+# 노드 3: 꼬리 질문 생성 (LLM 호출)
+# ──────────────────────────────────────────────
+
+async def generate_question(state: FollowUpState) -> dict:
+    """답변 분석 결과, 이력서, 크롤링 데이터를 결합하여 꼬리 질문을 생성한다."""
+    user_message = state["user_message"]
+    analysis = state["analysis"]
+    resume_context = state["resume_context"]
+    crawled_context = state["crawled_context"]
+
+    enriched_parts = [user_message]
+
+    enriched_parts.append(
+        f"\n[답변 분석 결과]\n"
+        f"품질: {analysis.get('quality', '알 수 없음')}\n"
+        f"부족한 부분: {', '.join(analysis.get('weak_points', []))}\n"
+        f"요약: {analysis.get('summary', '')}"
+    )
+
+    if resume_context:
+        enriched_parts.append(
+            f"\n[지원자 이력서 관련 정보]\n{resume_context}"
+        )
+
+    if crawled_context:
+        enriched_parts.append(
+            f"\n[업계 참고 자료 (채용공고/기술블로그/뉴스)]\n{crawled_context}"
+        )
+
+    enriched_message = "\n".join(enriched_parts)
 
     try:
         response = await _client.chat.completions.create(
@@ -87,36 +294,78 @@ async def generate_follow_up(
             temperature=0.7,
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
+                {"role": "system", "content": FOLLOWUP_PROMPT},
+                {"role": "user", "content": enriched_message},
             ],
-            timeout=30.0,
+            timeout=15.0,
         )
-    except APITimeoutError:
-        logger.error("OpenAI API 타임아웃")
-        return FollowUpResponse(
-            has_follow_up=False,
-            reason="AI 서비스 응답 시간 초과",
-        )
-    except APIError as e:
-        logger.error("OpenAI API 오류: %s", e)
-        return FollowUpResponse(
-            has_follow_up=False,
-            reason="AI 서비스 호출 실패",
-        )
-
-    raw_text = response.choices[0].message.content.strip()
-
-    try:
-        parsed = json.loads(raw_text)
-        return FollowUpResponse(
+        raw = response.choices[0].message.content.strip()
+        parsed = json.loads(raw)
+        result = FollowUpResponse(
             has_follow_up=parsed["has_follow_up"],
             follow_up_question=parsed.get("follow_up_question"),
             reason=parsed.get("reason"),
         )
-    except (json.JSONDecodeError, KeyError, TypeError):
-        logger.error("OpenAI 응답 파싱 실패: %s", raw_text)
-        return FollowUpResponse(
-            has_follow_up=False,
-            reason="AI 응답 파싱 실패",
+    except APITimeoutError:
+        logger.error("꼬리 질문 생성 타임아웃")
+        result = FollowUpResponse(
+            has_follow_up=False, reason="AI 서비스 응답 시간 초과"
         )
+    except APIError as e:
+        logger.error("꼬리 질문 생성 API 오류: %s", e)
+        result = FollowUpResponse(
+            has_follow_up=False, reason="AI 서비스 호출 실패"
+        )
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.error("꼬리 질문 응답 파싱 실패: %s", e)
+        result = FollowUpResponse(
+            has_follow_up=False, reason="AI 응답 파싱 실패"
+        )
+
+    return {"response": result}
+
+
+# ──────────────────────────────────────────────
+# LangGraph 워크플로우 구성
+# ──────────────────────────────────────────────
+
+def _build_graph() -> StateGraph:
+    graph = StateGraph(FollowUpState)
+
+    graph.add_node("analyze", analyze_answer)
+    graph.add_node("search", search_context)
+    graph.add_node("generate", generate_question)
+
+    graph.set_entry_point("analyze")
+    graph.add_edge("analyze", "search")
+    graph.add_edge("search", "generate")
+    graph.add_edge("generate", END)
+
+    return graph.compile()
+
+
+_workflow = _build_graph()
+
+
+# ──────────────────────────────────────────────
+# 외부 인터페이스
+# ──────────────────────────────────────────────
+
+async def generate_follow_up(request: FollowUpRequest) -> FollowUpResponse:
+    """LangGraph 워크플로우를 실행하여 꼬리 질문을 생성한다.
+
+    1단계: 답변 품질 분석 + 키워드 추출 (LLM)
+    2단계: ChromaDB에서 이력서 + 크롤링 데이터(채용공고/기술블로그) 병렬 검색
+    3단계: 분석 결과 + 이력서 + 크롤링 데이터를 결합하여 꼬리 질문 생성 (LLM)
+    """
+    initial_state: FollowUpState = {
+        "request": request,
+        "user_message": _build_conversation_text(request),
+        "analysis": {},
+        "resume_context": "",
+        "crawled_context": "",
+        "response": FollowUpResponse(has_follow_up=False),
+    }
+
+    result = await _workflow.ainvoke(initial_state)
+    return result["response"]
