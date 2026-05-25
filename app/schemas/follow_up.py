@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class QATurn(BaseModel):
@@ -21,7 +21,14 @@ class FollowUpRequest(BaseModel):
     interview_type: Literal["technical", "personality"]
     difficulty: Literal["low", "middle", "high"]
     conversation: list[QATurn] = Field(min_length=1)
-    user_id: str | None = None
+    user_id: Union[str, int, None] = None
+
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def coerce_user_id_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
 
 
 class FollowUpResponse(BaseModel):
