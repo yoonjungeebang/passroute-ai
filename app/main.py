@@ -5,10 +5,12 @@ from app.core.config import settings
 from app.routers.follow_up import router as follow_up_router
 from app.routers.question_generate import router as question_generate_router
 from app.services.embedder import get_embedder
+from app.routers.evaluation import router as evaluation_router
 from app.core.redis_client import init_redis, close_redis
 from app.services.stt_service import close_http_client
 from app.routers import stt, voice_analysis
 from app.routers.resume import router as resume_router
+from app.routers.debate import router as debate_router
 
 
 @asynccontextmanager
@@ -30,6 +32,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(evaluation_router)
+
 app.include_router(stt.router)
 app.include_router(voice_analysis.router)
 
@@ -38,6 +42,7 @@ app.include_router(follow_up_router)
 app.include_router(question_generate_router)
 
 app.include_router(resume_router)
+app.include_router(debate_router)
 
 
 @app.get("/health")

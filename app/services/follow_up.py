@@ -37,7 +37,7 @@ ANALYSIS_PROMPT = """\
 }\
 """
 
-FOLLOWUP_PROMPT = """\
+_BASE_SYSTEM_PROMPT = """\
 당신은 개발자 채용 면접관입니다.
 지원자의 답변과 분석 결과, 그리고 이력서 정보를 종합하여 꼬리 질문이 필요한지 판단하고, 필요하다면 꼬리 질문을 생성하세요.
 
@@ -54,10 +54,8 @@ FOLLOWUP_PROMPT = """\
 - 추가 질문이 면접 흐름에 도움이 되지 않는 경우
 - 답변과 무관한 방향으로 흘러갈 위험이 있는 경우
 
-## 난이도별 기준
-- low: 기본 개념 확인 수준. 답변이 핵심만 담고 있으면 꼬리 질문 불필요
-- middle: 개념 + 적용 경험 확인. 경험이나 구체적 사례가 빠지면 꼬리 질문 생성
-- high: 깊은 이해 + 트레이드오프 + 대안 제시까지 기대. 표면적 답변이면 반드시 꼬리 질문 생성
+## 난이도별 판단 기준
+{difficulty_criteria}
 
 ## 이력서 활용 지침
 - 이력서 정보가 제공되면, 지원자가 실제로 경험했다고 주장하는 내용과 답변을 대조하세요
@@ -72,12 +70,40 @@ FOLLOWUP_PROMPT = """\
 
 ## 응답 형식
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 포함하지 마세요.
-{
+{{
   "has_follow_up": true 또는 false,
   "follow_up_question": "꼬리 질문 텍스트" 또는 null,
   "reason": "판단 근거"
-}\
+}}\
 """
+
+DIFFICULTY_CRITERIA = {
+    "low": (
+        "현재 난이도: 하 (관대한 평가)\n"
+        "답변이 질문의 핵심 개념을 포함하고 있다면 추가 질문이 필요하지 않습니다.\n"
+        "기본적인 이해를 확인하는 수준으로 판단하세요.\n"
+        "구체적 사례나 경험이 없어도, 핵심 개념만 언급했다면 충분합니다."
+    ),
+    "middle": (
+        "현재 난이도: 중 (보통 평가)\n"
+        "답변에 개념 설명과 함께 구체적인 경험이나 사례가 포함되어야 합니다.\n"
+        "경험이나 사례가 빠져 있다면 이를 확인하는 꼬리질문을 생성하세요.\n"
+        "개념만 나열한 답변은 부족하며, 적용 경험까지 확인해야 합니다."
+    ),
+    "high": (
+        "현재 난이도: 상 (엄격한 평가)\n"
+        "답변에 깊은 이해, 트레이드오프 분석, 대안 제시가 포함되어야 합니다.\n"
+        "표면적이거나 암기식 답변이라면 반드시 꼬리질문을 생성하세요.\n"
+        "단순 개념 설명이나 경험 나열만으로는 부족하며, "
+        "왜 그 선택을 했는지, 다른 대안은 무엇이었는지까지 확인하세요."
+    ),
+}
+
+
+def _build_system_prompt(difficulty: str) -> str:
+    """난이도에 맞는 시스템 프롬프트를 구성한다."""
+    criteria = DIFFICULTY_CRITERIA[difficulty]
+    return _BASE_SYSTEM_PROMPT.format(difficulty_criteria=criteria)
 
 DIFFICULTY_LABELS = {
     "low": "하",
@@ -287,6 +313,8 @@ async def generate_question(state: FollowUpState) -> dict:
 
     enriched_message = "\n".join(enriched_parts)
 
+    system_prompt = _build_system_prompt(state["request"].difficulty)
+
     try:
         response = await _client.chat.completions.create(
             model=settings.OPENAI_MODEL,
@@ -294,7 +322,7 @@ async def generate_question(state: FollowUpState) -> dict:
             temperature=0.7,
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": FOLLOWUP_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": enriched_message},
             ],
             timeout=15.0,
