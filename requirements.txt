@@ -114,7 +114,6 @@ transformers==4.44.2
 typing_extensions==4.15.0
 urllib3==2.7.0
 uvicorn==0.47.0
-uvloop==0.22.1
 watchfiles==1.2.0
 webrtcvad-wheels==2.0.14
 websocket-client==1.9.0
@@ -123,3 +122,6 @@ wrapt==2.1.2
 yarl==1.23.0
 zipp==4.1.0
 langgraph>=0.2.0
+mediapipe==0.10.21
+deepface==0.0.93
+opencv-python-headless==4.10.0.84
