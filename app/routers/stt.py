@@ -193,7 +193,10 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             logger.error(f"종료 전 메트릭 저장 에러: {e}")
 
         await stt_queue.put(None)
-        await worker_task
+        try:
+            await worker_task
+        except Exception as e:
+            logger.error(f"STT 워커 태스크 에러: {e}")
 
         try:
             avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0

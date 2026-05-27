@@ -180,12 +180,14 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
 async def get_face_analysis_summary(session_id: str, question_id: str):
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(FaceAnalysis).where(
+            select(FaceAnalysis)
+            .where(
                 FaceAnalysis.session_id == session_id,
                 FaceAnalysis.question_id == question_id,
             )
+            .order_by(FaceAnalysis.created_at.desc())
         )
-        row = result.scalar_one_or_none()
+        row = result.scalars().first()
         if row is None:
             return {"gaze_off_count": 0, "avg_gaze_ratio": 0.0, "avg_blink_per_min": 0.0}
         return {
