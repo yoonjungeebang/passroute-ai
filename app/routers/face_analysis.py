@@ -9,6 +9,7 @@ import mediapipe as mp
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from sqlalchemy import select
 from app.services.face_analysis_service import analyze_frame
 from app.core.database import AsyncSessionLocal
 from app.models.face_analysis import FaceAnalysis
@@ -177,8 +178,6 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
 
 @router.get("/face/summary/{session_id}/{question_id}")
 async def get_face_analysis_summary(session_id: str, question_id: str):
-    from app.core.database import AsyncSessionLocal
-    from sqlalchemy import select
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(FaceAnalysis).where(
