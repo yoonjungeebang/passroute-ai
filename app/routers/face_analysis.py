@@ -157,7 +157,11 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
         is_connected = False
         logger.error(f"Face WebSocket 루프 에러: {e}")
     finally:
-        face_mesh.close()
+        try:
+            face_mesh.close()
+        except Exception as e:
+            logger.error(f"face_mesh 닫기 실패: {e}")
+
         duration_sec = round(time.time() - start_time, 2)
         try:
             avg_gaze_ratio = round(sum(gaze_ratio_values) / len(gaze_ratio_values), 2) if gaze_ratio_values else 0.0
