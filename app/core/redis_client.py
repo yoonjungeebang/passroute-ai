@@ -100,35 +100,16 @@ async def get_face_summary(session_id: str, question_id: str) -> dict:
     gaze_ratio_values = [float(v) for v in await r.lrange(f"{prefix}:gaze_ratio_values", 0, -1)]
     total_blink_raw = await r.get(f"{prefix}:total_blink_count")
     total_dur_raw = await r.get(f"{prefix}:total_duration_sec")
-    positive_raw = await r.get(f"{prefix}:positive_count")
-    negative_raw = await r.get(f"{prefix}:negative_count")
-    neutral_raw = await r.get(f"{prefix}:neutral_count")
-    total_em_raw = await r.get(f"{prefix}:total_emotion_frames")
 
     total_blink = int(total_blink_raw) if total_blink_raw else 0
     total_dur = float(total_dur_raw) if total_dur_raw else 0.0
     avg_blink_per_min = round(total_blink / (total_dur / 60), 2) if total_dur > 0 else 0.0
     avg_gaze_ratio = round(sum(gaze_ratio_values) / len(gaze_ratio_values), 2) if gaze_ratio_values else 0.0
 
-    pos = int(positive_raw) if positive_raw else 0
-    neg = int(negative_raw) if negative_raw else 0
-    neu = int(neutral_raw) if neutral_raw else 0
-    total_em = int(total_em_raw) if total_em_raw else 0
-
-    if total_em > 0:
-        pos_ratio = round(pos / total_em * 100, 1)
-        neg_ratio = round(neg / total_em * 100, 1)
-        neu_ratio = round(100.0 - pos_ratio - neg_ratio, 1)
-    else:
-        pos_ratio = neg_ratio = neu_ratio = 0.0
-
     return {
         "gaze_off_count": int(gaze_off_count_raw) if gaze_off_count_raw else 0,
         "avg_gaze_ratio": avg_gaze_ratio,
         "avg_blink_per_min": avg_blink_per_min,
-        "positive_emotion_ratio": pos_ratio,
-        "negative_emotion_ratio": neg_ratio,
-        "neutral_emotion_ratio": neu_ratio,
     }
 
 

@@ -9,11 +9,7 @@ import mediapipe as mp
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.services.face_analysis_service import (
-    analyze_frame,
-    analyze_emotion_async,
-    classify_emotion,
-)
+from app.services.face_analysis_service import analyze_frame
 from app.core.redis_client import (
     set_face_metric,
     rpush_face_metric,
@@ -30,7 +26,6 @@ GAZE_WINDOW_SEC = 10
 BLINK_IBI_COUNT = 5           # IBI 계산에 사용할 최근 깜빡임 수
 BLINK_IBI_THRESHOLD = 2.0     # 평균 깜빡임 간격(초) 이하면 과다 판정
 BLINK_DISPLAY_WINDOW_SEC = 10 # 화면 표시·리포트용 슬라이딩 윈도우
-EMOTION_INTERVAL_FRAMES = 30
 GAZE_RATIO_FEEDBACK_THRESHOLD = 60.0
 FEEDBACK_COOLDOWN_SEC = 5.0
 GAZE_RATIO_SAMPLE_INTERVAL = 30
@@ -57,9 +52,6 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
     prev_gaze_on = True
 
     frame_count = 0
-    last_emotion = "neutral"
-    negative_emotion_start: float | None = None
-
     last_feedback: dict = {}
     start_time = time.time()
 
@@ -95,7 +87,7 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
             except Exception:
                 continue
 
-            result = analyze_frame(face_mesh, frame)
+            result = await asyncio.to_thread(analyze_frame, face_mesh, frame)
             face_detected = result["face_detected"]
             gaze_on = result["gaze_on"]
             blink = result["blink"]
@@ -134,30 +126,9 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
                 blink_per_min = round(blink_in_window / BLINK_DISPLAY_WINDOW_SEC * 60, 1)
                 await rpush_face_metric(session_id, question_id, "blink_per_min_values", blink_per_min)
 
-
             # Sample gaze ratio for report every N frames
             if frame_count % GAZE_RATIO_SAMPLE_INTERVAL == 0:
                 await rpush_face_metric(session_id, question_id, "gaze_ratio_values", gaze_ratio)
-
-            # Real-time metrics
-            await set_face_metric(session_id, question_id, "gaze_ratio", gaze_ratio)
-            await set_face_metric(session_id, question_id, "blink_in_window", blink_in_window)
-            await set_face_metric(session_id, question_id, "gaze_on", 1 if (face_detected and gaze_on) else 0)
-
-            # Emotion analysis every N frames
-            if frame_count % EMOTION_INTERVAL_FRAMES == 0:
-                emotion = await analyze_emotion_async(frame)
-                last_emotion = emotion
-                classified = classify_emotion(emotion)
-                await incrby_face_metric(session_id, question_id, f"{classified}_count", 1)
-                await incrby_face_metric(session_id, question_id, "total_emotion_frames", 1)
-                await set_face_metric(session_id, question_id, "emotion", emotion)
-
-                if classified == "negative":
-                    if negative_emotion_start is None:
-                        negative_emotion_start = now
-                else:
-                    negative_emotion_start = None
 
             if not is_connected:
                 continue
@@ -168,7 +139,6 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
                 "gaze_on": gaze_on,
                 "gaze_ratio": gaze_ratio,
                 "blink_in_window": blink_in_window,
-                "emotion": last_emotion,
                 "ear": ear,
             })
 
@@ -188,9 +158,6 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
                     if can_feedback("blink_high", cooldown=10.0):
                         await send_ws({"status": "feedback", "type": "blink_high", "message": "눈 깜빡임이 많습니다. 긴장을 풀고 편안하게 답변해 주세요."})
 
-            if negative_emotion_start is not None and now - negative_emotion_start >= 3.0:
-                await send_feedback("emotion_negative", "표정을 좀 더 편안하게 유지해주세요.")
-
     except WebSocketDisconnect:
         is_connected = False
     except Exception as e:
@@ -209,9 +176,6 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
                     gaze_off_count=summary["gaze_off_count"],
                     avg_gaze_ratio=summary["avg_gaze_ratio"],
                     avg_blink_per_min=summary["avg_blink_per_min"],
-                    positive_emotion_ratio=summary["positive_emotion_ratio"],
-                    negative_emotion_ratio=summary["negative_emotion_ratio"],
-                    neutral_emotion_ratio=summary["neutral_emotion_ratio"],
                 ))
                 await db.commit()
             logger.info(f"[{session_id}:{question_id}] 영상 분석 결과 MySQL 저장 완료")

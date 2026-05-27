@@ -12,7 +12,4 @@ class FaceAnalysis(Base):
     gaze_off_count = Column(Integer)
     avg_gaze_ratio = Column(Float)
     avg_blink_per_min = Column(Float)
-    positive_emotion_ratio = Column(Float)
-    negative_emotion_ratio = Column(Float)
-    neutral_emotion_ratio = Column(Float)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

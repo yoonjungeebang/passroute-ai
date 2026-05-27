@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import cv2
@@ -25,9 +24,6 @@ RIGHT_EYE_OUTER = 362
 
 EAR_THRESHOLD = 0.25
 NOSE_TIP = 1  # nose tip landmark for head centering check
-
-POSITIVE_EMOTIONS = {"happy"}
-NEGATIVE_EMOTIONS = {"sad", "angry", "fear", "disgust"}
 
 
 def _ear(landmarks, eye_indices, w: int, h: int) -> float:
@@ -91,31 +87,3 @@ def analyze_frame(face_mesh, frame_bgr: np.ndarray) -> dict:
     }
 
 
-async def analyze_emotion_async(frame_bgr: np.ndarray) -> str:
-    loop = asyncio.get_event_loop()
-
-    def _run() -> str:
-        try:
-            from deepface import DeepFace
-            result = DeepFace.analyze(
-                frame_bgr,
-                actions=["emotion"],
-                enforce_detection=False,
-                silent=True,
-            )
-            if isinstance(result, list):
-                result = result[0]
-            return result.get("dominant_emotion", "neutral")
-        except Exception as e:
-            logger.debug(f"DeepFace 분석 실패: {e}")
-            return "neutral"
-
-    return await loop.run_in_executor(None, _run)
-
-
-def classify_emotion(emotion: str) -> str:
-    if emotion in POSITIVE_EMOTIONS:
-        return "positive"
-    if emotion in NEGATIVE_EMOTIONS:
-        return "negative"
-    return "neutral"
