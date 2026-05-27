@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class QATurn(BaseModel):
@@ -15,11 +15,20 @@ class FollowUpRequest(BaseModel):
 
     conversation을 리스트로 받아 다단계 꼬리 질문 확장이 가능하다.
     conversation[-1]이 현재 턴이며, 이전 인덱스는 꼬리 질문 이력이다.
+    user_id가 있으면 ChromaDB에서 이력서를 검색하여 꼬리 질문에 활용한다.
     """
 
     interview_type: Literal["technical", "personality"]
     difficulty: Literal["low", "middle", "high"]
     conversation: list[QATurn] = Field(min_length=1)
+    user_id: Union[str, int, None] = None
+
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def coerce_user_id_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
 
 
 class FollowUpResponse(BaseModel):
