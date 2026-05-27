@@ -10,11 +10,6 @@ from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
 from app.services.voice_analysis_service import count_filler_words
 from app.core.redis_client import (
     append_stt_transcript,
-    set_voice_metric,
-    rpush_voice_metric,
-    incrby_voice_metric,
-    incrbyfloat_voice_metric,
-    get_voice_summary,
     get_full_transcript,
 )
 from sqlalchemy import text
@@ -47,6 +42,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     last_feedback: dict = {}
     is_connected = True
 
+    total_words = 0
+    total_speech_sec = 0.0
+    silence_values: list = []
+    filler_count_total = 0
+
     async def send_ws(data: dict):
         async with ws_lock:
             await websocket.send_json(data)
@@ -75,7 +75,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     worker_task = asyncio.create_task(stt_worker())
 
     async def process_stt(audio_buffer: np.ndarray, segment_sec: float, ts: float):
-        nonlocal consecutive_filler_segments
+        nonlocal consecutive_filler_segments, total_words, total_speech_sec, filler_count_total
         try:
             text = await transcribe_audio(audio_buffer)
             if not text:
@@ -90,20 +90,18 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             while speech_segments and speech_segments[0][0] < cutoff:
                 speech_segments.popleft()
 
-            total_words = sum(s[1] for s in speech_segments)
-            total_sec = sum(s[2] for s in speech_segments)
-            wpm = round(total_words / total_sec * 60, 1) if total_sec > 0 else 0.0
+            window_words = sum(s[1] for s in speech_segments)
+            window_sec = sum(s[2] for s in speech_segments)
+            wpm = round(window_words / window_sec * 60, 1) if window_sec > 0 else 0.0
 
-            # 실시간 피드백용 최신값 저장
-            await set_voice_metric(session_id, question_id, "wpm", wpm)
-            # 리포트용: 가중 평균 WPM을 위해 전체 단어 수와 발화 시간 누적
+            # 리포트용 누적
             if words > 0:
-                await incrby_voice_metric(session_id, question_id, "total_words", words)
-                await incrbyfloat_voice_metric(session_id, question_id, "total_speech_sec", segment_sec)
+                total_words += words
+                total_speech_sec += segment_sec
 
             # 필러워드
             filler_count = count_filler_words(text)
-            await incrby_voice_metric(session_id, question_id, "filler_count", filler_count)
+            filler_count_total += filler_count
             if filler_count > 0:
                 consecutive_filler_segments += 1
             else:
@@ -151,8 +149,8 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                 # 음성 감지 시 침묵 구간 종료 → 침묵 시간 리스트에 저장
                 if silence_start is not None:
                     silence_sec = round(now - silence_start, 2)
-                    if silence_sec > MIN_SILENCE_DURATION:  # 0.5초 이상 침묵만 의미 있는 침묵으로 기록
-                        await rpush_voice_metric(session_id, question_id, "silence_values", silence_sec)
+                    if silence_sec > MIN_SILENCE_DURATION:
+                        silence_values.append(silence_sec)
                     silence_start = None
 
                 audio_chunks.append(chunk)
@@ -162,7 +160,6 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     silence_start = now
 
                 silence_sec = round(now - silence_start, 2)
-                await set_voice_metric(session_id, question_id, "silence_sec", silence_sec)
                 await send_ws({"status": "silence", "silence_sec": silence_sec})
 
                 if silence_sec > SILENCE_ALERT_SEC:
@@ -185,7 +182,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             if silence_start is not None:
                 silence_sec = round(time.time() - silence_start, 2)
                 if silence_sec > MIN_SILENCE_DURATION:
-                    await rpush_voice_metric(session_id, question_id, "silence_values", silence_sec)
+                    silence_values.append(silence_sec)
 
             # 마지막 음성 청크 → STT 큐에 넣어 WPM/필러워드 통계 반영
             if audio_chunks:
@@ -196,18 +193,22 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             logger.error(f"종료 전 메트릭 저장 에러: {e}")
 
         await stt_queue.put(None)
-        await worker_task
+        try:
+            await worker_task
+        except Exception as e:
+            logger.error(f"STT 워커 태스크 에러: {e}")
 
         try:
-            summary = await get_voice_summary(session_id, question_id)
+            avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
+            avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
             full_text = await get_full_transcript(session_id, question_id)
             async with AsyncSessionLocal() as db:
                 db.add(VoiceAnalysis(
                     session_id=session_id,
                     question_id=question_id,
-                    avg_wpm=summary["avg_wpm"],
-                    avg_silence_duration=summary["avg_silence_duration"],
-                    filler_count=summary["filler_count"],
+                    avg_wpm=avg_wpm,
+                    avg_silence_duration=avg_silence_duration,
+                    filler_count=filler_count_total,
                 ))
                 # interview_answers.question_id는 Spring Boot 스키마 기준 INT 타입
                 if full_text and session_id.isdigit() and question_id.isdigit():

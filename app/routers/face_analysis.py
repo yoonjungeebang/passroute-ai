@@ -9,13 +9,8 @@ import mediapipe as mp
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from sqlalchemy import select
 from app.services.face_analysis_service import analyze_frame
-from app.core.redis_client import (
-    set_face_metric,
-    rpush_face_metric,
-    incrby_face_metric,
-    get_face_summary,
-)
 from app.core.database import AsyncSessionLocal
 from app.models.face_analysis import FaceAnalysis
 
@@ -50,6 +45,10 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
     blink_ibi: deque = deque(maxlen=BLINK_IBI_COUNT)  # IBI 계산용 (최근 5개)
     prev_blink = False
     prev_gaze_on = True
+
+    gaze_off_count = 0
+    total_blink_count = 0
+    gaze_ratio_values: list = []
 
     frame_count = 0
     last_feedback: dict = {}
@@ -95,7 +94,7 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
 
             # Gaze off event (transition: gaze_on → gaze_off)
             if prev_gaze_on and not (face_detected and gaze_on):
-                await incrby_face_metric(session_id, question_id, "gaze_off_count", 1)
+                gaze_off_count += 1
             prev_gaze_on = face_detected and gaze_on
 
             # Gaze sliding window for ratio
@@ -112,23 +111,17 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
             if blink and not prev_blink:
                 blink_display.append(now)
                 blink_ibi.append(now)
-                await incrby_face_metric(session_id, question_id, "total_blink_count", 1)
+                total_blink_count += 1
             prev_blink = blink
 
             while blink_display and blink_display[0] < now - BLINK_DISPLAY_WINDOW_SEC:
                 blink_display.popleft()
 
             blink_in_window = len(blink_display)
-            elapsed_since_start = now - start_time
-
-            # 리포트용: 60초마다 스냅샷 저장
-            if frame_count % (5 * 60) == 0 and elapsed_since_start >= 60.0:
-                blink_per_min = round(blink_in_window / BLINK_DISPLAY_WINDOW_SEC * 60, 1)
-                await rpush_face_metric(session_id, question_id, "blink_per_min_values", blink_per_min)
 
             # Sample gaze ratio for report every N frames
             if frame_count % GAZE_RATIO_SAMPLE_INTERVAL == 0:
-                await rpush_face_metric(session_id, question_id, "gaze_ratio_values", gaze_ratio)
+                gaze_ratio_values.append(gaze_ratio)
 
             if not is_connected:
                 continue
@@ -164,18 +157,22 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
         is_connected = False
         logger.error(f"Face WebSocket 루프 에러: {e}")
     finally:
-        face_mesh.close()
+        try:
+            face_mesh.close()
+        except Exception as e:
+            logger.error(f"face_mesh 닫기 실패: {e}")
+
         duration_sec = round(time.time() - start_time, 2)
         try:
-            await set_face_metric(session_id, question_id, "total_duration_sec", duration_sec)
-            summary = await get_face_summary(session_id, question_id)
+            avg_gaze_ratio = round(sum(gaze_ratio_values) / len(gaze_ratio_values), 2) if gaze_ratio_values else 0.0
+            avg_blink_per_min = round(total_blink_count / (duration_sec / 60), 2) if duration_sec > 0 else 0.0
             async with AsyncSessionLocal() as db:
                 db.add(FaceAnalysis(
                     session_id=session_id,
                     question_id=question_id,
-                    gaze_off_count=summary["gaze_off_count"],
-                    avg_gaze_ratio=summary["avg_gaze_ratio"],
-                    avg_blink_per_min=summary["avg_blink_per_min"],
+                    gaze_off_count=gaze_off_count,
+                    avg_gaze_ratio=avg_gaze_ratio,
+                    avg_blink_per_min=avg_blink_per_min,
                 ))
                 await db.commit()
             logger.info(f"[{session_id}:{question_id}] 영상 분석 결과 MySQL 저장 완료")
@@ -185,4 +182,21 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
 
 @router.get("/face/summary/{session_id}/{question_id}")
 async def get_face_analysis_summary(session_id: str, question_id: str):
-    return await get_face_summary(session_id, question_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(FaceAnalysis)
+            .where(
+                FaceAnalysis.session_id == session_id,
+                FaceAnalysis.question_id == question_id,
+            )
+            .order_by(FaceAnalysis.created_at.desc())
+            .limit(1)
+        )
+        row = result.scalars().first()
+        if row is None:
+            return {"gaze_off_count": 0, "avg_gaze_ratio": 0.0, "avg_blink_per_min": 0.0}
+        return {
+            "gaze_off_count": row.gaze_off_count,
+            "avg_gaze_ratio": row.avg_gaze_ratio,
+            "avg_blink_per_min": row.avg_blink_per_min,
+        }
