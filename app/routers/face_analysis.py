@@ -186,6 +186,7 @@ async def get_face_analysis_summary(session_id: str, question_id: str):
                 FaceAnalysis.question_id == question_id,
             )
             .order_by(FaceAnalysis.created_at.desc())
+            .limit(1)
         )
         row = result.scalars().first()
         if row is None:
