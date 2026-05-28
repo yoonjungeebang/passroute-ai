@@ -27,6 +27,9 @@ MIN_SILENCE_DURATION = 0.5
 @router.websocket("/ws/stt/{session_id}/{question_id}")
 async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str):
     await websocket.accept()
+    if not session_id.isdigit() or not question_id.isdigit():
+        await websocket.close(code=1008)
+        return
     audio_chunks = []
     ws_lock = asyncio.Lock()
     stt_queue: asyncio.Queue = asyncio.Queue()
