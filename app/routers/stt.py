@@ -221,10 +221,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             logger.error(f"음성 분석 결과 MySQL 저장 에러: {e}")
 
 
-@router.websocket("/ws/stt/debate/{session_id}/{round}")
-async def debate_stt_websocket(websocket: WebSocket, session_id: str, round: str):
+@router.websocket("/ws/stt/debate/{session_id}/{round_type}")
+async def debate_stt_websocket(websocket: WebSocket, session_id: str, round_type: str):
     await websocket.accept()
-    if not session_id.isdigit():
+    ALLOWED_ROUNDS = {"OPENING", "REBUTTAL_1", "REBUTTAL_2", "CLOSING"}
+    if not session_id.isdigit() or round_type not in ALLOWED_ROUNDS:
         await websocket.close(code=1008)
         return
     audio_chunks = []
@@ -308,7 +309,7 @@ async def debate_stt_websocket(websocket: WebSocket, session_id: str, round: str
                 "status": "completed",
                 "text": transcribed,
                 "session_id": session_id,
-                "round": round,
+                "round": round_type,
                 "wpm": wpm,
                 "filler_count": filler_count,
             })
@@ -395,7 +396,7 @@ async def debate_stt_websocket(websocket: WebSocket, session_id: str, round: str
             async with AsyncSessionLocal() as db:
                 db.add(VoiceAnalysis(
                     session_id=session_id,
-                    question_id=round,
+                    question_id=round_type,
                     avg_wpm=avg_wpm,
                     avg_silence_duration=avg_silence_duration,
                     filler_count=filler_count_total,
@@ -407,6 +408,6 @@ async def debate_stt_websocket(websocket: WebSocket, session_id: str, round: str
                         {"pending_stt": full_text, "session_id": int(session_id)},
                     )
                 await db.commit()
-            logger.info(f"[debate {session_id}:{round}] 음성 분석 결과 및 pending_stt MySQL 저장 완료")
+            logger.info(f"[debate {session_id}:{round_type}] 음성 분석 결과 및 pending_stt MySQL 저장 완료")
         except Exception as e:
             logger.error(f"토론 음성 분석 결과 MySQL 저장 에러: {e}")
