@@ -4,15 +4,11 @@ import time
 from collections import deque
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from sqlalchemy import text
 from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
 from app.services.voice_analysis_service import count_filler_words
-from app.core.redis_client import (
-    append_stt_transcript,
-    get_full_transcript,
-)
-from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
 from app.models.voice_analysis import VoiceAnalysis
 
@@ -31,6 +27,9 @@ MIN_SILENCE_DURATION = 0.5
 @router.websocket("/ws/stt/{session_id}/{question_id}")
 async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str):
     await websocket.accept()
+    if not session_id.isdigit() or not question_id.isdigit():
+        await websocket.close(code=1008)
+        return
     audio_chunks = []
     ws_lock = asyncio.Lock()
     stt_queue: asyncio.Queue = asyncio.Queue()
@@ -46,6 +45,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
     total_speech_sec = 0.0
     silence_values: list = []
     filler_count_total = 0
+    stt_parts: list = []
 
     async def send_ws(data: dict):
         async with ws_lock:
@@ -81,7 +81,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             if not text:
                 return
 
-            await append_stt_transcript(session_id, question_id, text)
+            stt_parts.append(text)
 
             # WPM 슬라이딩 윈도우 (실시간 피드백용)
             words = len([w for w in text.split() if w])
@@ -209,38 +209,13 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     avg_silence_duration=avg_silence_duration,
                     filler_count=filler_count_total,
                 ))
+                if stt_parts:
+                    full_text = " ".join(stt_parts)
+                    await db.execute(
+                        text("UPDATE interview_answers SET answer_text = :answer_text WHERE session_id = :session_id AND question_id = :question_id"),
+                        {"answer_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
+                    )
                 await db.commit()
-            logger.info(f"[{session_id}:{question_id}] 음성 분석 결과 MySQL 저장 완료")
+            logger.info(f"[{session_id}:{question_id}] 음성 분석 결과 및 answer_text MySQL 저장 완료")
         except Exception as e:
             logger.error(f"음성 분석 결과 MySQL 저장 에러: {e}")
-
-
-@router.post("/interview/{session_id}/save-stt")
-async def save_stt(session_id: str):
-    if not session_id.isdigit():
-        raise HTTPException(status_code=400, detail="invalid session_id")
-    try:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                text("SELECT question_id FROM interview_answers WHERE session_id = :session_id"),
-                {"session_id": int(session_id)},
-            )
-            question_ids = [row[0] for row in result.fetchall()]
-            saved = 0
-            for question_id in question_ids:
-                full_text = await get_full_transcript(session_id, str(question_id))
-                if full_text:
-                    await db.execute(
-                        text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
-                        {"stt_text": full_text, "session_id": int(session_id), "question_id": question_id},
-                    )
-                    saved += 1
-            if saved > 0:
-                await db.commit()
-        logger.info(f"[session={session_id}] STT MySQL 저장 완료: {saved}개")
-        return {"status": "ok", "saved": saved}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"STT MySQL 저장 에러: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
