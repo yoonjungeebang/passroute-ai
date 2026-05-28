@@ -17,9 +17,16 @@ async def end_interview(session_id: str, db: AsyncSession = Depends(get_db)):
         ).where(VoiceAnalysis.session_id == session_id)
     )
     row = result.fetchone()
+    if row is None or row.avg_wpm is None:
+        return {
+            "session_id": session_id,
+            "avg_wpm": None,
+            "avg_silence_duration": None,
+            "total_filler_count": None,
+        }
     return {
         "session_id": session_id,
-        "avg_wpm": round(row.avg_wpm or 0, 2),
+        "avg_wpm": round(row.avg_wpm, 2),
         "avg_silence_duration": round(row.avg_silence_duration or 0, 4),
         "total_filler_count": row.total_filler_count or 0,
     }
