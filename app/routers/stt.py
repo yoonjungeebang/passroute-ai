@@ -4,7 +4,7 @@ import time
 from collections import deque
 
 import numpy as np
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
 from app.services.voice_analysis_service import count_filler_words
@@ -218,7 +218,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 @router.post("/interview/{session_id}/save-stt")
 async def save_stt(session_id: str):
     if not session_id.isdigit():
-        return {"status": "error", "message": "invalid session_id"}
+        raise HTTPException(status_code=400, detail="invalid session_id")
     try:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -226,21 +226,21 @@ async def save_stt(session_id: str):
                 {"session_id": int(session_id)},
             )
             question_ids = [row[0] for row in result.fetchall()]
-
-        saved = 0
-        for question_id in question_ids:
-            full_text = await get_full_transcript(session_id, str(question_id))
-            if full_text:
-                async with AsyncSessionLocal() as db:
+            saved = 0
+            for question_id in question_ids:
+                full_text = await get_full_transcript(session_id, str(question_id))
+                if full_text:
                     await db.execute(
                         text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
                         {"stt_text": full_text, "session_id": int(session_id), "question_id": question_id},
                     )
-                    await db.commit()
-                saved += 1
-
+                    saved += 1
+            if saved > 0:
+                await db.commit()
         logger.info(f"[session={session_id}] STT MySQL 저장 완료: {saved}개")
         return {"status": "ok", "saved": saved}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"STT MySQL 저장 에러: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
