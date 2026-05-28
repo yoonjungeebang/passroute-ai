@@ -201,7 +201,6 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
         try:
             avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
             avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
-            full_text = await get_full_transcript(session_id, question_id)
             async with AsyncSessionLocal() as db:
                 db.add(VoiceAnalysis(
                     session_id=session_id,
@@ -210,13 +209,38 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                     avg_silence_duration=avg_silence_duration,
                     filler_count=filler_count_total,
                 ))
-                # interview_answers.question_id는 Spring Boot 스키마 기준 INT 타입
-                if full_text and session_id.isdigit() and question_id.isdigit():
+                await db.commit()
+            logger.info(f"[{session_id}:{question_id}] 음성 분석 결과 MySQL 저장 완료")
+        except Exception as e:
+            logger.error(f"음성 분석 결과 MySQL 저장 에러: {e}")
+
+
+@router.post("/interview/{session_id}/save-stt")
+async def save_stt(session_id: str):
+    if not session_id.isdigit():
+        return {"status": "error", "message": "invalid session_id"}
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                text("SELECT question_id FROM interview_answers WHERE session_id = :session_id"),
+                {"session_id": int(session_id)},
+            )
+            question_ids = [row[0] for row in result.fetchall()]
+
+        saved = 0
+        for question_id in question_ids:
+            full_text = await get_full_transcript(session_id, str(question_id))
+            if full_text:
+                async with AsyncSessionLocal() as db:
                     await db.execute(
                         text("UPDATE interview_answers SET stt_text = :stt_text WHERE session_id = :session_id AND question_id = :question_id"),
-                        {"stt_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
+                        {"stt_text": full_text, "session_id": int(session_id), "question_id": question_id},
                     )
-                await db.commit()
-            logger.info(f"[{session_id}:{question_id}] 분석 결과 MySQL 저장 완료")
-        except Exception as e:
-            logger.error(f"분석 결과 MySQL 저장 에러: {e}")
+                    await db.commit()
+                saved += 1
+
+        logger.info(f"[session={session_id}] STT MySQL 저장 완료: {saved}개")
+        return {"status": "ok", "saved": saved}
+    except Exception as e:
+        logger.error(f"STT MySQL 저장 에러: {e}")
+        return {"status": "error", "message": str(e)}
