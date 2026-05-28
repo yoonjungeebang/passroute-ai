@@ -224,6 +224,7 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 @router.websocket("/ws/stt/debate/{session_id}/{round_type}")
 async def debate_stt_websocket(websocket: WebSocket, session_id: str, round_type: str):
     await websocket.accept()
+    round_type = round_type.upper()
     ALLOWED_ROUNDS = {"OPENING", "REBUTTAL_1", "REBUTTAL_2", "CLOSING"}
     if not session_id.isdigit() or round_type not in ALLOWED_ROUNDS:
         await websocket.close(code=1008)
