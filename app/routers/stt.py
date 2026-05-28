@@ -202,20 +202,20 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
             avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
             async with AsyncSessionLocal() as db:
-                db.add(VoiceAnalysis(
-                    session_id=session_id,
-                    question_id=question_id,
-                    avg_wpm=avg_wpm,
-                    avg_silence_duration=avg_silence_duration,
-                    filler_count=filler_count_total,
-                ))
-                if stt_parts:
-                    full_text = " ".join(stt_parts)
-                    await db.execute(
-                        text("UPDATE interview_answers SET answer_text = :answer_text WHERE session_id = :session_id AND question_id = :question_id"),
-                        {"answer_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
-                    )
-                await db.commit()
+                async with db.begin():
+                    db.add(VoiceAnalysis(
+                        session_id=session_id,
+                        question_id=question_id,
+                        avg_wpm=avg_wpm,
+                        avg_silence_duration=avg_silence_duration,
+                        filler_count=filler_count_total,
+                    ))
+                    if stt_parts:
+                        full_text = " ".join(stt_parts)
+                        await db.execute(
+                            text("UPDATE interview_answers SET answer_text = :answer_text WHERE session_id = :session_id AND question_id = :question_id"),
+                            {"answer_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
+                        )
             logger.info(f"[{session_id}:{question_id}] 음성 분석 결과 및 answer_text MySQL 저장 완료")
         except Exception as e:
             logger.error(f"음성 분석 결과 MySQL 저장 에러: {e}")
@@ -394,20 +394,20 @@ async def debate_stt_websocket(websocket: WebSocket, session_id: str, round_type
             avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
             avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
             async with AsyncSessionLocal() as db:
-                db.add(VoiceAnalysis(
-                    session_id=session_id,
-                    question_id=round_type,
-                    avg_wpm=avg_wpm,
-                    avg_silence_duration=avg_silence_duration,
-                    filler_count=filler_count_total,
-                ))
-                if stt_parts:
-                    full_text = " ".join(stt_parts)
-                    await db.execute(
-                        text("UPDATE debate_sessions SET pending_stt = :pending_stt WHERE id = :session_id"),
-                        {"pending_stt": full_text, "session_id": int(session_id)},
-                    )
-                await db.commit()
+                async with db.begin():
+                    db.add(VoiceAnalysis(
+                        session_id=session_id,
+                        question_id=round_type,
+                        avg_wpm=avg_wpm,
+                        avg_silence_duration=avg_silence_duration,
+                        filler_count=filler_count_total,
+                    ))
+                    if stt_parts:
+                        full_text = " ".join(stt_parts)
+                        await db.execute(
+                            text("UPDATE debate_sessions SET pending_stt = :pending_stt WHERE id = :session_id"),
+                            {"pending_stt": full_text, "session_id": int(session_id)},
+                        )
             logger.info(f"[debate {session_id}:{round_type}] 음성 분석 결과 및 pending_stt MySQL 저장 완료")
         except Exception as e:
             logger.error(f"토론 음성 분석 결과 MySQL 저장 에러: {e}")
