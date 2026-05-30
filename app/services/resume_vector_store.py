@@ -60,17 +60,26 @@ def store_resume(user_id: str, raw_text: str) -> None:  # structured 제거
     )
 
 
+_crawled_collection = None
+
+
 def _get_crawled_collection():
-    """job_descriptions 컬렉션을 반환한다."""
-    return _get_client().get_or_create_collection(
-        name="job_descriptions",
-        embedding_function=_get_embedding_fn(),
-        metadata={"hnsw:space": "cosine"},
-    )
+    """job_descriptions 컬렉션을 캐싱하여 반환한다."""
+    global _crawled_collection
+    if _crawled_collection is None:
+        _crawled_collection = _get_client().get_or_create_collection(
+            name="job_descriptions",
+            embedding_function=_get_embedding_fn(),
+            metadata={"hnsw:space": "cosine"},
+        )
+    return _crawled_collection
 
 
 def query_crawled_data(search_query: str, sources: list[str], n_results: int = 3) -> str:
     """ChromaDB job_descriptions 컬렉션에서 크롤링 데이터를 검색한다."""
+    if not search_query or not search_query.strip():
+        return ""
+
     collection = _get_crawled_collection()
 
     where_filter = (

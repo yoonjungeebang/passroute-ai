@@ -242,9 +242,9 @@ async def generate_questions(
         request.interview_type, request.interview_format,
     )
 
-    search_query = request.cover_letter[:500]
+    search_query = request.cover_letter[:500].strip()
     if request.resume:
-        search_query += " " + request.resume[:300]
+        search_query = (search_query + " " + request.resume[:300]).strip()
 
     try:
         crawled_context = await asyncio.to_thread(
