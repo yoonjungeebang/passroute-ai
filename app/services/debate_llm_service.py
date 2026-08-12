@@ -7,18 +7,30 @@ from openai import OpenAIError
 
 from app.core.config import settings
 from app.schemas.debate import (
-    InterviewerOpeningRequest, InterviewerOpeningResponse,
-    DebateOpeningRequest, DebateOpeningResponse,
-    DebateRebuttalRequest, DebateRebuttalResponse,
-    DebateClosingRequest, DebateClosingResponse,
-    InterviewerClosingRequest, InterviewerClosingResponse,
-    DebateTurnEvalRequest, DebateTurnEvalResponse,
-    DebateScoreItemWithWeight, DebateTurnScores, DebateTurnEvalSummary,
-    DebateSessionSummaryRequest, DebateSessionSummaryResponse, TurnHighlight,
-    DebateReportRequest, DebateReportResponse, DebateWeaknessItem, DebateTurnFeedback,
+    DebateClosingRequest,
+    DebateClosingResponse,
+    DebateOpeningRequest,
+    DebateOpeningResponse,
+    DebateRebuttalRequest,
+    DebateRebuttalResponse,
+    DebateReportRequest,
+    DebateReportResponse,
+    DebateScoreItemWithWeight,
+    DebateSessionSummaryRequest,
+    DebateSessionSummaryResponse,
+    DebateTurnEvalRequest,
+    DebateTurnEvalResponse,
+    DebateTurnEvalSummary,
+    DebateTurnFeedback,
+    DebateTurnScores,
+    DebateWeaknessItem,
+    InterviewerClosingRequest,
+    InterviewerClosingResponse,
+    InterviewerOpeningRequest,
+    InterviewerOpeningResponse,
+    TurnHighlight,
 )
 from app.services.llm_service import _client, _parse_json
-
 
 # ── 프롬프트 캐싱 ──────────────────────────────────────────────────────────────
 

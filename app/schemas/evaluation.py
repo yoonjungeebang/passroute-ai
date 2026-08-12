@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Optional, Literal
-from pydantic import BaseModel, Field, model_validator
 
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 # ── 공통 ──────────────────────────────────────────────────────────────────────
 
@@ -39,10 +40,10 @@ class LLMScores(BaseModel):
     conciseness: ScoreItem
     clarity: ScoreItem
     job_relevance: ScoreItem
-    accuracy: Optional[ScoreItem] = None
-    depth: Optional[ScoreItem] = None
-    authenticity: Optional[ScoreItem] = None
-    growth: Optional[ScoreItem] = None
+    accuracy: ScoreItem | None = None
+    depth: ScoreItem | None = None
+    authenticity: ScoreItem | None = None
+    growth: ScoreItem | None = None
 
 
 class LLMScoresWithWeight(BaseModel):
@@ -52,10 +53,10 @@ class LLMScoresWithWeight(BaseModel):
     conciseness: ScoreItemWithWeight
     clarity: ScoreItemWithWeight
     job_relevance: ScoreItemWithWeight
-    accuracy: Optional[ScoreItemWithWeight] = None
-    depth: Optional[ScoreItemWithWeight] = None
-    authenticity: Optional[ScoreItemWithWeight] = None
-    growth: Optional[ScoreItemWithWeight] = None
+    accuracy: ScoreItemWithWeight | None = None
+    depth: ScoreItemWithWeight | None = None
+    authenticity: ScoreItemWithWeight | None = None
+    growth: ScoreItemWithWeight | None = None
 
 
 class QuestionEvaluationResponse(BaseModel):
@@ -85,11 +86,11 @@ class StarBreakdown(BaseModel):
 class StarEvaluationDetail(BaseModel):
     applicable: bool
     reason: str
-    star_breakdown: Optional[StarBreakdown] = None
-    star_score: Optional[int] = Field(default=None, ge=0, le=4)
+    star_breakdown: StarBreakdown | None = None
+    star_score: int | None = Field(default=None, ge=0, le=4)
 
     @model_validator(mode='after')
-    def check_non_applicable_fields(self) -> 'StarEvaluationDetail':
+    def check_non_applicable_fields(self) -> StarEvaluationDetail:
         if not self.applicable:
             if self.star_breakdown is not None or self.star_score is not None:
                 raise ValueError("applicable=false일 때 star_breakdown, star_score는 null이어야 합니다.")
@@ -122,10 +123,10 @@ class ItemAverages(BaseModel):
     conciseness: ItemAvg
     clarity: ItemAvg
     job_relevance: ItemAvg
-    accuracy: Optional[ItemAvg] = None
-    depth: Optional[ItemAvg] = None
-    authenticity: Optional[ItemAvg] = None
-    growth: Optional[ItemAvg] = None
+    accuracy: ItemAvg | None = None
+    depth: ItemAvg | None = None
+    authenticity: ItemAvg | None = None
+    growth: ItemAvg | None = None
 
 
 class SessionScore(BaseModel):
@@ -171,7 +172,7 @@ class SessionSummaryResponse(BaseModel):
 
 class StarEvalForReport(BaseModel):
     applicable: bool
-    star_score: Optional[int] = Field(default=None, ge=0, le=4)
+    star_score: int | None = Field(default=None, ge=0, le=4)
 
 
 class QuestionEvalForReport(BaseModel):
@@ -181,7 +182,7 @@ class QuestionEvalForReport(BaseModel):
     percentage: float = Field(ge=0, le=100)
     summary: EvaluationSummary
     star_evaluation: StarEvalForReport
-    voice_feedback: Optional[str] = None
+    voice_feedback: str | None = None
 
 
 class InterviewReadiness(BaseModel):
@@ -204,8 +205,8 @@ class VoiceHighlightMoment(BaseModel):
 
 
 class VoiceHighlight(BaseModel):
-    best_moment: Optional[VoiceHighlightMoment] = None
-    improvement_moment: Optional[VoiceHighlightMoment] = None
+    best_moment: VoiceHighlightMoment | None = None
+    improvement_moment: VoiceHighlightMoment | None = None
 
 
 class ReportGenerationRequest(BaseModel):
@@ -213,7 +214,7 @@ class ReportGenerationRequest(BaseModel):
     company_name: str
     question_evaluations: list[QuestionEvalForReport]
     session_result: SessionResultForReport
-    voice_highlight: Optional[VoiceHighlight] = None
+    voice_highlight: VoiceHighlight | None = None
 
 
 class WeaknessItem(BaseModel):
@@ -227,8 +228,8 @@ class QuestionFeedback(BaseModel):
     question_type: Literal["technical", "personality"]
     percentage: float = Field(ge=0, le=100)
     feedback: str
-    star_comment: Optional[str] = None
-    voice_comment: Optional[str] = None
+    star_comment: str | None = None
+    voice_comment: str | None = None
 
 
 class ReportGenerationResponse(BaseModel):

@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -11,15 +11,15 @@ class QuestionGenerateRequest(BaseModel):
     interview_type: Literal["PERSONALITY", "TECHNICAL"]
     interview_format: Literal["ONE_ON_ONE", "DEBATE"]
     cover_letter: str
-    resume: Optional[str] = None
-    portfolio: Optional[str] = None
+    resume: str | None = None
+    portfolio: str | None = None
     question_count: int = Field(default=5, ge=1, le=20)
 
 
 class GeneratedQuestion(BaseModel):
     question: str
     followup_questions: list[str] = []
-    intent: Optional[str] = None
+    intent: str | None = None
 
 
 class QuestionGenerateResponse(BaseModel):

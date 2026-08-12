@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Literal, Optional
+
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 # ── 공통 타입 ──────────────────────────────────────────────────────────────────
@@ -101,7 +103,7 @@ class DebateTurnEvalRequest(BaseModel):
     user_stance: DebateStance
     round_type: DebateRound
     user_content: str
-    opponent_previous_turn: Optional[str] = None
+    opponent_previous_turn: str | None = None
     history: list[DebateTurnItem]
 
 
@@ -118,8 +120,8 @@ class DebateScoreItemWithWeight(BaseModel):
 
 class DebateTurnScores(BaseModel):
     logic: DebateScoreItemWithWeight
-    rebuttal_quality: Optional[DebateScoreItemWithWeight] = None
-    consistency: Optional[DebateScoreItemWithWeight] = None
+    rebuttal_quality: DebateScoreItemWithWeight | None = None
+    consistency: DebateScoreItemWithWeight | None = None
     attitude: DebateScoreItemWithWeight
 
 

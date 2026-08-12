@@ -1,16 +1,17 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from sqlalchemy import text
-from app.core.config import settings
+
 from app.core.database import engine
+from app.routers import face_analysis, stt, voice_analysis
+from app.routers.debate import router as debate_router
+from app.routers.evaluation import router as evaluation_router
 from app.routers.follow_up import router as follow_up_router
 from app.routers.question_generate import router as question_generate_router
-from app.services.embedder import get_embedder
-from app.routers.evaluation import router as evaluation_router
-from app.services.stt_service import close_http_client
-from app.routers import stt, voice_analysis, face_analysis
 from app.routers.resume import router as resume_router
-from app.routers.debate import router as debate_router
+from app.services.embedder import get_embedder
+from app.services.stt_service import close_http_client
 
 
 @asynccontextmanager

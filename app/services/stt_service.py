@@ -2,9 +2,11 @@ import io
 import json
 import logging
 import wave
-import numpy as np
+
 import httpx
+import numpy as np
 import webrtcvad
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

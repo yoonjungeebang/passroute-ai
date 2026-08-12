@@ -8,7 +8,7 @@ from langgraph.graph import END, StateGraph
 
 from app.core.config import settings
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
-from app.services.resume_vector_store import query_resume, query_crawled_data
+from app.services.resume_vector_store import query_crawled_data, query_resume
 
 logger = logging.getLogger(__name__)
 

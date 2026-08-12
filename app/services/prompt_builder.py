@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import Optional
 
 from openai import APIError, APITimeoutError, AsyncOpenAI
 
@@ -179,9 +178,9 @@ def build_prompt(
     interview_type: str,
     interview_format: str,
     cover_letter: str,
-    resume: Optional[str] = None,
-    portfolio: Optional[str] = None,
-    crawled_context: Optional[str] = None,
+    resume: str | None = None,
+    portfolio: str | None = None,
+    crawled_context: str | None = None,
     crawled_label: str = "참고 업계 자료",
     question_count: int = 5,
 ) -> str:

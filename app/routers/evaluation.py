@@ -1,25 +1,33 @@
 from fastapi import APIRouter
-from app.schemas.evaluation import (
-    QuestionEvaluationRequest, QuestionEvaluationResponse,
-    StarEvaluationRequest, StarEvaluationResponse,
-    SessionSummaryRequest, SessionSummaryResponse,
-    ReportGenerationRequest, ReportGenerationResponse,
-)
+
 from app.schemas.debate import (
-    DebateTurnEvalRequest, DebateTurnEvalResponse,
-    DebateSessionSummaryRequest, DebateSessionSummaryResponse,
-    DebateReportRequest, DebateReportResponse,
+    DebateReportRequest,
+    DebateReportResponse,
+    DebateSessionSummaryRequest,
+    DebateSessionSummaryResponse,
+    DebateTurnEvalRequest,
+    DebateTurnEvalResponse,
+)
+from app.schemas.evaluation import (
+    QuestionEvaluationRequest,
+    QuestionEvaluationResponse,
+    ReportGenerationRequest,
+    ReportGenerationResponse,
+    SessionSummaryRequest,
+    SessionSummaryResponse,
+    StarEvaluationRequest,
+    StarEvaluationResponse,
+)
+from app.services.debate_llm_service import (
+    evaluate_debate_turn,
+    generate_debate_report,
+    generate_debate_session_summary,
 )
 from app.services.llm_service import (
     evaluate_question,
     evaluate_star,
-    generate_session_summary,
     generate_report,
-)
-from app.services.debate_llm_service import (
-    evaluate_debate_turn,
-    generate_debate_session_summary,
-    generate_debate_report,
+    generate_session_summary,
 )
 
 router = APIRouter(tags=["evaluation"])

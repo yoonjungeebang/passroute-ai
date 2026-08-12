@@ -1,0 +1,11 @@
+[lint]
+ignore = [
+    "BLE001",  # blind exception catch - WebSocket/STT 등에서 필요
+    "B008",    # function call in default argument - FastAPI Depends/File 패턴
+    "S110",    # try-except-pass - 에러 무시가 의도적인 경우
+    "S112",    # try-except-continue - 에러 무시가 의도적인 경우
+    "SIM102",  # nested if - 가독성 판단은 작성자에게
+    "SIM117",  # nested with - async with 중첩은 의도적
+    "C408",    # unnecessary dict call
+    "TRY004",  # prefer TypeError
+]

@@ -5,12 +5,12 @@ from collections import deque
 
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
 from sqlalchemy import text
-from app.services.stt_service import detect_voice, transcribe_audio, SAMPLE_RATE
-from app.services.voice_analysis_service import count_filler_words
+
 from app.core.database import AsyncSessionLocal
 from app.models.voice_analysis import VoiceAnalysis
+from app.services.stt_service import SAMPLE_RATE, detect_voice, transcribe_audio
+from app.services.voice_analysis_service import count_filler_words
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

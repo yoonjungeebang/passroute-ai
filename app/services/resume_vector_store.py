@@ -1,10 +1,8 @@
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sqlalchemy import text
 
-from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.services.embedder import get_embedder
-
 
 _embedder = None
 

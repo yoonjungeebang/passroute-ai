@@ -8,11 +8,11 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
 from sqlalchemy import select
-from app.services.face_analysis_service import analyze_frame
+
 from app.core.database import AsyncSessionLocal
 from app.models.face_analysis import FaceAnalysis
+from app.services.face_analysis_service import analyze_frame
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

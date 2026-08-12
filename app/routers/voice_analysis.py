@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.models.voice_analysis import VoiceAnalysis
 

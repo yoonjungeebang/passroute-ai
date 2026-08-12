@@ -1,7 +1,9 @@
 import os
 import ssl
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+
 from app.core.config import settings
 
 # SSL 설정 (RDS 연결용, 인증서 파일이 있을 때만 적용)

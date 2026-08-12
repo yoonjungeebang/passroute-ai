@@ -2,7 +2,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from app.services.resume_parser import parse_resume
-from app.services.resume_vector_store import store_resume, search_candidates
+from app.services.resume_vector_store import search_candidates, store_resume
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -19,7 +19,7 @@ async def process_resume(user_id: str, file: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"처리 중 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"처리 중 오류: {e!s}")
 
 
 @router.get("/search")

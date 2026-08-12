@@ -1,17 +1,23 @@
 from fastapi import APIRouter
+
 from app.schemas.debate import (
-    InterviewerOpeningRequest, InterviewerOpeningResponse,
-    DebateOpeningRequest, DebateOpeningResponse,
-    DebateRebuttalRequest, DebateRebuttalResponse,
-    DebateClosingRequest, DebateClosingResponse,
-    InterviewerClosingRequest, InterviewerClosingResponse,
+    DebateClosingRequest,
+    DebateClosingResponse,
+    DebateOpeningRequest,
+    DebateOpeningResponse,
+    DebateRebuttalRequest,
+    DebateRebuttalResponse,
+    InterviewerClosingRequest,
+    InterviewerClosingResponse,
+    InterviewerOpeningRequest,
+    InterviewerOpeningResponse,
 )
 from app.services.debate_llm_service import (
-    generate_interviewer_opening,
+    generate_competitor_closing,
     generate_competitor_opening,
     generate_competitor_rebuttal,
-    generate_competitor_closing,
     generate_interviewer_closing,
+    generate_interviewer_opening,
 )
 
 router = APIRouter(tags=["debate"])

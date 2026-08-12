@@ -1,28 +1,29 @@
 import json
 import re
-from openai import AsyncOpenAI, OpenAIError
+
 from fastapi import HTTPException
+from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 from app.schemas.evaluation import (
     EvaluationSummary,
     LLMScores,
     LLMScoresWithWeight,
-    ScoreItemWithWeight,
     QuestionEvaluationRequest,
     QuestionEvaluationResponse,
-    StarEvaluationRequest,
-    StarEvaluationResponse,
-    StarEvaluationDetail,
-    StarBreakdown,
-    SessionSummaryRequest,
-    SessionSummaryResponse,
-    SessionSummaryOutput,
+    QuestionFeedback,
     QuestionHighlight,
     ReportGenerationRequest,
     ReportGenerationResponse,
+    ScoreItemWithWeight,
+    SessionSummaryOutput,
+    SessionSummaryRequest,
+    SessionSummaryResponse,
+    StarBreakdown,
+    StarEvaluationDetail,
+    StarEvaluationRequest,
+    StarEvaluationResponse,
     WeaknessItem,
-    QuestionFeedback,
 )
 
 # score-policy.md 가중치 테이블
