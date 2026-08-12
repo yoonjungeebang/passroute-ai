@@ -16,7 +16,7 @@ pgvector==0.3.6
 click==8.4.0
 coloredlogs==15.0.1
 distro==1.9.0
-docx2txt==0.8
+docx2txt==0.9
 durationpy==0.10
 ecdsa==0.19.2
 fastapi==0.136.1
@@ -121,4 +121,5 @@ wrapt==2.1.2
 yarl==1.23.0
 zipp==4.1.0
 langgraph>=0.2.0
-mediapipe==0.10.35
+mediapipe==0.10.21
+opencv-python-headless==4.10.0.84

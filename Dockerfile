@@ -1,5 +1,5 @@
 # Stage 1: ONNX 변환 + 양자화 (PyTorch는 이 스테이지에서만 사용)
-FROM python:3.12-slim AS builder
+FROM python:3.11-slim AS builder
 
 RUN pip install --no-cache-dir \
     torch --index-url https://download.pytorch.org/whl/cpu
@@ -21,7 +21,7 @@ t = AutoTokenizer.from_pretrained('snunlp/KR-SBERT-V40K-klueNLI-augSTS'); \
 t.save_pretrained('/tmp/tokenizer/')"
 
 # Stage 2: 런타임 (PyTorch 미포함, 이미지 경량화)
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
