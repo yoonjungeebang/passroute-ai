@@ -142,7 +142,7 @@ jobs:
             --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy passroute-ai-dev" \
-            --timeout-seconds 300 \
+            --timeout-seconds 600 \
             --parameters 'commands=[
               "cd /home/ubuntu && bash deploy.sh ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:develop-${{ github.event.workflow_run.head_sha }}"
             ]' \
@@ -168,7 +168,7 @@ jobs:
             fi
 
             echo "배포 진행 중... ($i/60)"
-            sleep 5
+            sleep 10
           done
 
           if [ "$STATUS" != "Success" ]; then

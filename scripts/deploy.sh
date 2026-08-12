@@ -70,16 +70,16 @@ else
   docker compose --profile "$TARGET" up -d "fastapi-$TARGET"
 fi
 
-# 헬스체크 (최대 120초)
+# 헬스체크 (최대 180초)
 echo "헬스체크 대기 중..."
 HEALTH_OK=false
-for i in $(seq 1 24); do
+for i in $(seq 1 36); do
   if docker compose exec "fastapi-$TARGET" curl -sf http://localhost:8000/health > /dev/null 2>&1; then
     echo "$TARGET 헬스체크 통과"
     HEALTH_OK=true
     break
   fi
-  echo "헬스체크 대기... ($i/24)"
+  echo "헬스체크 대기... ($i/36)"
   sleep 5
 done
 
