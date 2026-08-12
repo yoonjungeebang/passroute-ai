@@ -18,10 +18,6 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-northeast-2"
     AWS_S3_BUCKET_NAME: str = ""
     
-    # ChromaDB
-    CHROMADB_HOST: str = "localhost"
-    CHROMADB_PORT: int = 8000
-
     # 임베딩 모델
     EMBEDDING_MODEL: str = "snunlp/KR-SBERT-V40K-klueNLI-augSTS"
     MODELS_DIR: str = "/app/models"
