@@ -3,8 +3,8 @@ import json
 import logging
 from typing import TypedDict
 
+from anthropic import APIError, APITimeoutError, AsyncAnthropic
 from langgraph.graph import END, StateGraph
-from openai import APIError, APITimeoutError, AsyncOpenAI
 
 from app.core.config import settings
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
@@ -12,7 +12,7 @@ from app.services.resume_vector_store import _get_collection, query_crawled_data
 
 logger = logging.getLogger(__name__)
 
-_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+_client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 # ──────────────────────────────────────────────
 # 프롬프트
@@ -211,18 +211,16 @@ async def analyze_answer(state: FollowUpState) -> dict:
     user_message = state["user_message"]
 
     try:
-        response = await _client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        response = await _client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
             max_tokens=512,
             temperature=0.3,
-            response_format={"type": "json_object"},
+            system=ANALYSIS_PROMPT,
             messages=[
-                {"role": "system", "content": ANALYSIS_PROMPT},
                 {"role": "user", "content": user_message},
             ],
-            timeout=15.0,
         )
-        content = response.choices[0].message.content
+        content = response.content[0].text
         if not content:
             raise ValueError("Empty response content")
         analysis = json.loads(content.strip())
@@ -350,18 +348,16 @@ async def generate_question(state: FollowUpState) -> dict:
     system_prompt = _build_system_prompt(state["request"].difficulty)
 
     try:
-        response = await _client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        response = await _client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
             max_tokens=512,
             temperature=0.7,
-            response_format={"type": "json_object"},
+            system=system_prompt,
             messages=[
-                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": enriched_message},
             ],
-            timeout=15.0,
         )
-        content = response.choices[0].message.content
+        content = response.content[0].text
         if not content:
             raise ValueError("Empty response content")
         parsed = json.loads(content.strip())
