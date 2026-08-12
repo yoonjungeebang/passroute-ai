@@ -77,14 +77,14 @@ jobs:
           ENVFILE
           )
 
-          ENV_B64=$(echo "$ENV_CONTENT" | sed 's/^          //' | base64 -w0)
+          ENV_B64=$(echo "$ENV_CONTENT" | sed 's/^[[:space:]]*//' | base64 -w0)
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Create AI server .env" \
             --timeout-seconds 30 \
-            --parameters "commands=[\"echo $ENV_B64 | base64 -d > /home/ubuntu/.env\"]" \
+            --parameters "commands=[\"echo $ENV_B64 | base64 -d > /home/ubuntu/.env && chown ubuntu:ubuntu /home/ubuntu/.env\"]" \
             --query 'Command.CommandId' --output text)
 
           aws ssm wait command-executed \
@@ -105,12 +105,13 @@ jobs:
             --arg c3 "mkdir -p /home/ubuntu/nginx" \
             --arg c4 "echo $NGINX_B64 | base64 -d > /home/ubuntu/nginx/nginx.conf" \
             --arg c5 "echo $ROLLBACK_B64 | base64 -d > /home/ubuntu/rollback.sh && chmod +x /home/ubuntu/rollback.sh" \
+            --arg c6 "chown -R ubuntu:ubuntu /home/ubuntu/docker-compose.yml /home/ubuntu/deploy.sh /home/ubuntu/rollback.sh /home/ubuntu/nginx" \
             '{
               InstanceIds: [$inst],
               DocumentName: "AWS-RunShellScript",
               Comment: "Sync deploy files",
               TimeoutSeconds: 30,
-              Parameters: { commands: [$c1, $c2, $c3, $c4, $c5] }
+              Parameters: { commands: [$c1, $c2, $c3, $c4, $c5, $c6] }
             }' > /tmp/ssm-sync.json
 
           COMMAND_ID=$(aws ssm send-command \

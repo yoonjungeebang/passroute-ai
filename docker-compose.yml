@@ -6,7 +6,8 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
-      - fastapi-blue
+      fastapi-blue:
+        condition: service_healthy
     restart: unless-stopped
 
   fastapi-blue:
@@ -23,6 +24,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
 
   fastapi-green:
     image: yaejin02/passroute-ai:develop
@@ -38,6 +40,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
     profiles:
       - green
 
