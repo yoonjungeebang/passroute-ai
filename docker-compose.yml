@@ -1,9 +1,18 @@
 services:
-  fastapi:
-    image: 896884286777.dkr.ecr.ap-northeast-2.amazonaws.com/passroute-ai-server:latest
-    build: .
+  nginx:
+    image: nginx:alpine
     ports:
       - "8000:8000"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - fastapi-blue
+    restart: unless-stopped
+
+  fastapi-blue:
+    image: yaejin02/passroute-ai:develop
+    expose:
+      - "8000"
     env_file: .env
     depends_on:
       - redis
@@ -15,7 +24,25 @@ services:
       timeout: 10s
       retries: 3
 
+  fastapi-green:
+    image: yaejin02/passroute-ai:develop
+    expose:
+      - "8000"
+    env_file: .env
+    depends_on:
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - green
+
   redis:
     image: redis:7
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
+    restart: unless-stopped

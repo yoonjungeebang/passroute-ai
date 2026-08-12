@@ -1,0 +1,194 @@
+name: CD Dev
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Docker image build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:develop
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:develop-${{ github.event.workflow_run.head_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Create .env on EC2 via SSM
+        run: |
+          ENV_CONTENT=$(cat <<'ENVFILE'
+          DATABASE_URL=${{ secrets.AI_DATABASE_URL }}
+          REDIS_URL=${{ secrets.AI_REDIS_URL }}
+          OPENAI_API_KEY=${{ secrets.AI_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.AI_ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.AI_GEMINI_API_KEY }}
+          CLOVA_SECRET_KEY=${{ secrets.AI_CLOVA_SECRET_KEY }}
+          CLOVA_INVOKE_URL=${{ secrets.AI_CLOVA_INVOKE_URL }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AI_AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_BUCKET_NAME=${{ secrets.AI_AWS_S3_BUCKET_NAME }}
+          ENVFILE
+          )
+
+          ENV_B64=$(echo "$ENV_CONTENT" | sed 's/^          //' | base64 -w0)
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Create AI server .env" \
+            --timeout-seconds 30 \
+            --parameters "commands=[\"echo $ENV_B64 | base64 -d > /home/ubuntu/.env\"]" \
+            --query 'Command.CommandId' --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}"
+
+      - name: Sync deploy files via SSM
+        run: |
+          COMPOSE_B64=$(base64 -w0 < docker-compose.yml)
+          DEPLOY_B64=$(base64 -w0 < scripts/deploy.sh)
+          ROLLBACK_B64=$(base64 -w0 < scripts/rollback.sh)
+          NGINX_B64=$(base64 -w0 < nginx/nginx.conf)
+
+          jq -n \
+            --arg inst "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --arg c1 "echo $COMPOSE_B64 | base64 -d > /home/ubuntu/docker-compose.yml" \
+            --arg c2 "echo $DEPLOY_B64 | base64 -d > /home/ubuntu/deploy.sh && chmod +x /home/ubuntu/deploy.sh" \
+            --arg c3 "mkdir -p /home/ubuntu/nginx" \
+            --arg c4 "echo $NGINX_B64 | base64 -d > /home/ubuntu/nginx/nginx.conf" \
+            --arg c5 "echo $ROLLBACK_B64 | base64 -d > /home/ubuntu/rollback.sh && chmod +x /home/ubuntu/rollback.sh" \
+            '{
+              InstanceIds: [$inst],
+              DocumentName: "AWS-RunShellScript",
+              Comment: "Sync deploy files",
+              TimeoutSeconds: 30,
+              Parameters: { commands: [$c1, $c2, $c3, $c4, $c5] }
+            }' > /tmp/ssm-sync.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --cli-input-json file:///tmp/ssm-sync.json \
+            --query 'Command.CommandId' --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}"
+
+          SYNC_STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --query 'Status' --output text)
+
+          if [ "$SYNC_STATUS" != "Success" ]; then
+            echo "::error::배포 파일 동기화 실패: $SYNC_STATUS"
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+              --query 'StandardErrorContent' --output text
+            exit 1
+          fi
+
+      - name: Deploy via SSM
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy passroute-ai-dev" \
+            --timeout-seconds 300 \
+            --parameters 'commands=[
+              "cd /home/ubuntu && bash deploy.sh ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:develop-${{ github.event.workflow_run.head_sha }}"
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+              --query 'Status' --output text 2>/dev/null || echo "Pending")
+
+            if [ "$STATUS" = "Success" ]; then
+              echo "배포 성공"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "::error::Deployment failed with status: $STATUS"
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+                --query 'StandardErrorContent' --output text
+              exit 1
+            fi
+
+            echo "배포 진행 중... ($i/60)"
+            sleep 5
+          done
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::Deployment timed out"
+            exit 1
+          fi
+
+      - name: CD Success Notification
+        if: success()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          title: ✅ AI 서버 배포 성공 ✅
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          color: 0x00FF00
+          username: PassRoute Bot
+
+      - name: CD Failure Notification
+        if: failure()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          title: ❗️ AI 서버 배포 실패 ❗️
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          color: 0xFF0000
+          username: PassRoute Bot

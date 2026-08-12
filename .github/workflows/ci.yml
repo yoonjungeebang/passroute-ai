@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint check
+        run: |
+          pip install ruff
+          ruff check app/
+
+      - name: Run tests
+        run: |
+          pip install pytest pytest-asyncio
+          pytest --tb=short -q
+        env:
+          TESTING: "true"
+
+      - name: Verify Dockerfile builds (syntax check)
+        uses: docker/setup-buildx-action@v3
+
+      - name: CI Success Notification
+        uses: sarisia/actions-status-discord@v1
+        if: success()
+        with:
+          title: AI 서버 CI 성공
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          color: 0x00FF00
+          username: PassRoute CI
+
+      - name: CI Failure Notification
+        uses: sarisia/actions-status-discord@v1
+        if: failure()
+        with:
+          title: AI 서버 CI 실패
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          color: 0xFF0000
+          username: PassRoute CI
