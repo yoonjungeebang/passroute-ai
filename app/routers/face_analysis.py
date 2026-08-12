@@ -5,14 +5,13 @@ import time
 from collections import deque
 
 import cv2
-import mediapipe as mp
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
 from app.models.face_analysis import FaceAnalysis
-from app.services.face_analysis_service import analyze_frame
+from app.services.face_analysis_service import analyze_frame, create_face_landmarker
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,13 +31,7 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
     ws_lock = asyncio.Lock()
     is_connected = True
 
-    face_mesh = mp.solutions.face_mesh.FaceMesh(
-        static_image_mode=False,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
+    face_mesh = create_face_landmarker()
 
     gaze_window: deque = deque()
     blink_display: deque = deque()                    # 10초 표시용

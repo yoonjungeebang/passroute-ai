@@ -3,16 +3,22 @@ import logging
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks.python import BaseOptions
+from mediapipe.tasks.python.vision import (
+    FaceLandmarker,
+    FaceLandmarkerOptions,
+    RunningMode,
+)
 
 logger = logging.getLogger(__name__)
 
-mp_face_mesh = mp.solutions.face_mesh
+FACE_LANDMARKER_MODEL_PATH = "/app/models/face_landmarker.task"
 
 # EAR landmarks: [outer, upper-outer, upper-inner, inner, lower-inner, lower-outer]
 LEFT_EYE = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE = [362, 385, 387, 263, 373, 380]
 
-# Iris center landmarks (requires refine_landmarks=True)
+# Iris center landmarks
 LEFT_IRIS_CENTER = 468
 RIGHT_IRIS_CENTER = 473
 
@@ -24,6 +30,17 @@ RIGHT_EYE_OUTER = 362
 
 EAR_THRESHOLD = 0.25
 NOSE_TIP = 1  # nose tip landmark for head centering check
+
+
+def create_face_landmarker() -> FaceLandmarker:
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL_PATH),
+        running_mode=RunningMode.IMAGE,
+        num_faces=1,
+        min_face_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    return FaceLandmarker.create_from_options(options)
 
 
 def _ear(landmarks, eye_indices, w: int, h: int) -> float:
@@ -60,15 +77,16 @@ def _iris_centered(lm) -> bool:
     return True
 
 
-def analyze_frame(face_mesh, frame_bgr: np.ndarray) -> dict:
+def analyze_frame(landmarker: FaceLandmarker, frame_bgr: np.ndarray) -> dict:
     h, w = frame_bgr.shape[:2]
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-    result = face_mesh.process(rgb)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result = landmarker.detect(mp_image)
 
-    if not result.multi_face_landmarks:
+    if not result.face_landmarks:
         return {"face_detected": False, "gaze_on": False, "blink": False, "ear": 0.0}
 
-    lm = result.multi_face_landmarks[0].landmark
+    lm = result.face_landmarks[0]
 
     left_ear = _ear(lm, LEFT_EYE, w, h)
     right_ear = _ear(lm, RIGHT_EYE, w, h)
