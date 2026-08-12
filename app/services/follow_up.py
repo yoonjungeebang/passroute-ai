@@ -8,7 +8,7 @@ from langgraph.graph import END, StateGraph
 
 from app.core.config import settings
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
-from app.services.resume_vector_store import _get_collection, query_crawled_data
+from app.services.resume_vector_store import query_resume, query_crawled_data
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ async def analyze_answer(state: FollowUpState) -> dict:
 
 
 # ──────────────────────────────────────────────
-# 노드 2: ChromaDB 검색 (이력서 + 크롤링 데이터)
+# 노드 2: PostgreSQL(pgvector) 검색 (이력서 + 크롤링 데이터)
 # ──────────────────────────────────────────────
 
 # 면접 유형별 검색할 크롤링 데이터 source
@@ -248,24 +248,9 @@ _SOURCE_FILTER: dict[str, list[str]] = {
     "personality": ["jobkorea"],
 }
 
-def _query_resume(user_id: str, search_query: str) -> str:
-    """ChromaDB resumes 컬렉션에서 이력서 청크를 검색한다."""
-    collection = _get_collection()
-    results = collection.query(
-        query_texts=[search_query],
-        n_results=3,
-        where={"user_id": user_id},
-    )
-
-    documents = results.get("documents", [[]])[0]
-    if not documents:
-        return ""
-
-    return "\n".join(f"- {doc[:300]}" for doc in documents)
-
 
 async def search_context(state: FollowUpState) -> dict:
-    """이력서와 크롤링 데이터를 ChromaDB에서 병렬 검색한다."""
+    """이력서와 크롤링 데이터를 PostgreSQL(pgvector)에서 병렬 검색한다."""
     request = state["request"]
     analysis = state["analysis"]
 
@@ -281,11 +266,11 @@ async def search_context(state: FollowUpState) -> dict:
 
     # 이력서 + 크롤링 데이터 병렬 검색
     resume_task = (
-        asyncio.to_thread(_query_resume, request.user_id, search_query)
+        query_resume(request.user_id, search_query)
         if request.user_id
         else _noop()
     )
-    crawled_task = asyncio.to_thread(query_crawled_data, search_query, sources)
+    crawled_task = query_crawled_data(search_query, sources)
 
     results = await asyncio.gather(resume_task, crawled_task, return_exceptions=True)
 
@@ -415,7 +400,7 @@ async def generate_follow_up(request: FollowUpRequest) -> FollowUpResponse:
     """LangGraph 워크플로우를 실행하여 꼬리 질문을 생성한다.
 
     1단계: 답변 품질 분석 + 키워드 추출 (LLM)
-    2단계: ChromaDB에서 이력서 + 크롤링 데이터(채용공고/기술블로그) 병렬 검색
+    2단계: PostgreSQL(pgvector)에서 이력서 + 크롤링 데이터(채용공고/기술블로그) 병렬 검색
     3단계: 분석 결과 + 이력서 + 크롤링 데이터를 결합하여 꼬리 질문 생성 (LLM)
     """
     initial_state: FollowUpState = {

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from typing import Optional
@@ -247,11 +246,9 @@ async def generate_questions(
         search_query = (search_query + " " + request.resume[:300]).strip()
 
     try:
-        crawled_context = await asyncio.to_thread(
-            query_crawled_data, search_query, sources,
-        )
+        crawled_context = await query_crawled_data(search_query, sources)
     except Exception as e:
-        logger.warning("ChromaDB 크롤링 데이터 검색 실패: %s", e)
+        logger.warning("크롤링 데이터 검색 실패: %s", e)
         crawled_context = ""
 
     system_prompt = build_prompt(

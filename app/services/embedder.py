@@ -15,7 +15,7 @@ class OnnxEmbedder:
 
     snunlp/KR-SBERT-V40K-klueNLI-augSTS 모델의 ONNX QUInt8 양자화 버전을 사용한다.
     Consumer와 동일한 후처리(Mean Pooling + L2 정규화)를 적용하여
-    ChromaDB 유사도 검색이 정상 동작하도록 보장한다.
+    PostgreSQL(pgvector) 유사도 검색이 정상 동작하도록 보장한다.
     """
 
     def __init__(self) -> None:

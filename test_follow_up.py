@@ -54,13 +54,13 @@ async def run_pipeline_verbose(request: FollowUpRequest) -> FollowUpResponse:
     t1 = time.perf_counter()
     _print_step(f"노드 1 - 답변 분석 ({t1 - t0:.2f}s)", state["analysis"])
 
-    # 노드 2: ChromaDB 검색
+    # 노드 2: PostgreSQL(pgvector) 검색
     t0 = time.perf_counter()
     try:
         result = await search_context(state)
         state.update(result)
     except Exception as e:
-        print(f"\n  (ChromaDB 미연결 - 검색 스킵: {e})")
+        print(f"\n  (DB 미연결 - 검색 스킵: {e})")
     t1 = time.perf_counter()
     _print_step(
         f"노드 2 - 컨텍스트 검색 ({t1 - t0:.2f}s)",

@@ -1,100 +1,113 @@
-from chromadb import HttpClient
-from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from sqlalchemy import text
 
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
 from app.services.embedder import get_embedder
 
 
-class OnnxEmbeddingFunction(EmbeddingFunction):
-    def __init__(self):
-        self._embedder = get_embedder()
-
-    def __call__(self, input: Documents) -> Embeddings:
-        return [self._embedder.embed(text) for text in input]
+_embedder = None
 
 
-_client = None
-_embedding_fn = None
+def _get_embedder():
+    global _embedder
+    if _embedder is None:
+        _embedder = get_embedder()
+    return _embedder
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        _client = HttpClient(
-            host=settings.CHROMADB_HOST,
-            port=settings.CHROMADB_PORT,
+async def store_resume(user_id: str, raw_text: str) -> None:
+    """이력서를 청킹 + 임베딩하여 PostgreSQL(pgvector)에 저장한다."""
+    embedder = _get_embedder()
+
+    # 기존 데이터 삭제
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text("DELETE FROM resume_chunks WHERE user_id = :uid"),
+            {"uid": user_id},
         )
-    return _client
+
+        # 텍스트 청킹
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        chunks = splitter.split_text(raw_text)
+
+        # 임베딩 생성 및 삽입
+        for i, chunk in enumerate(chunks):
+            embedding = embedder.embed(chunk)
+            await session.execute(
+                text(
+                    "INSERT INTO resume_chunks (id, user_id, content, embedding) "
+                    "VALUES (:id, :uid, :content, :embedding)"
+                ),
+                {
+                    "id": f"{user_id}_chunk_{i}",
+                    "uid": user_id,
+                    "content": chunk,
+                    "embedding": str(embedding),
+                },
+            )
+
+        await session.commit()
 
 
-def _get_embedding_fn():
-    global _embedding_fn
-    if _embedding_fn is None:
-        _embedding_fn = OnnxEmbeddingFunction()
-    return _embedding_fn
+async def query_resume(user_id: str, search_query: str, n_results: int = 3) -> str:
+    """PostgreSQL resumes 테이블에서 이력서 청크를 유사도 검색한다."""
+    embedder = _get_embedder()
+    query_embedding = embedder.embed(search_query)
 
-
-def _get_collection():
-    return _get_client().get_or_create_collection(
-        name="resumes",
-        embedding_function=_get_embedding_fn(),
-        metadata={"hnsw:space": "cosine"},
-    )
-
-
-def store_resume(user_id: str, raw_text: str) -> None:  # structured 제거
-    collection = _get_collection()
-
-    existing = collection.get(where={"user_id": user_id})
-    if existing["ids"]:
-        collection.delete(ids=existing["ids"])
-
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    chunks = splitter.split_text(raw_text)
-
-    collection.add(
-        documents=chunks,
-        metadatas=[{"user_id": user_id, "type": "chunk"} for _ in chunks],
-        ids=[f"{user_id}_chunk_{i}" for i in range(len(chunks))],
-    )
-
-
-_crawled_collection = None
-
-
-def _get_crawled_collection():
-    """job_descriptions 컬렉션을 캐싱하여 반환한다."""
-    global _crawled_collection
-    if _crawled_collection is None:
-        _crawled_collection = _get_client().get_or_create_collection(
-            name="job_descriptions",
-            embedding_function=_get_embedding_fn(),
-            metadata={"hnsw:space": "cosine"},
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            text(
+                "SELECT content, 1 - (embedding <=> :embedding::vector) AS similarity "
+                "FROM resume_chunks "
+                "WHERE user_id = :uid "
+                "ORDER BY embedding <=> :embedding::vector "
+                "LIMIT :limit"
+            ),
+            {
+                "embedding": str(query_embedding),
+                "uid": user_id,
+                "limit": n_results,
+            },
         )
-    return _crawled_collection
+        rows = result.fetchall()
+
+    if not rows:
+        return ""
+
+    return "\n".join(f"- {row.content[:300]}" for row in rows)
 
 
-def query_crawled_data(search_query: str, sources: list[str], n_results: int = 3) -> str:
-    """ChromaDB job_descriptions 컬렉션에서 크롤링 데이터를 검색한다."""
+async def query_crawled_data(search_query: str, sources: list[str], n_results: int = 3) -> str:
+    """PostgreSQL job_descriptions 테이블에서 크롤링 데이터를 유사도 검색한다."""
     if not search_query or not search_query.strip():
         return ""
 
-    collection = _get_crawled_collection()
+    embedder = _get_embedder()
+    query_embedding = embedder.embed(search_query)
 
-    where_filter = (
-        {"source": {"$in": sources}} if len(sources) > 1 else {"source": sources[0]}
-    )
+    # source IN 절 동적 생성
+    source_params = {f"s{i}": s for i, s in enumerate(sources)}
+    source_placeholders = ", ".join(f":s{i}" for i in range(len(sources)))
 
-    results = collection.query(
-        query_texts=[search_query],
-        n_results=n_results,
-        where=where_filter,
-    )
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            text(
+                f"SELECT content, source, title "
+                f"FROM job_descriptions "
+                f"WHERE source IN ({source_placeholders}) "
+                f"ORDER BY embedding <=> :embedding::vector "
+                f"LIMIT :limit"
+            ),
+            {
+                **source_params,
+                "embedding": str(query_embedding),
+                "limit": n_results,
+            },
+        )
+        rows = result.fetchall()
 
-    documents = results.get("documents", [[]])[0]
-    metadatas = results.get("metadatas", [[]])[0]
-    if not documents:
+    if not rows:
         return ""
 
     source_labels = {
@@ -103,33 +116,46 @@ def query_crawled_data(search_query: str, sources: list[str], n_results: int = 3
         "naver_news": "뉴스",
     }
     parts = []
-    for doc, meta in zip(documents, metadatas):
-        source = meta.get("source", "")
-        title = meta.get("title", "")
-        label = source_labels.get(source, source)
-        parts.append(f"- [{label}] {title}: {doc[:300]}")
+    for row in rows:
+        label = source_labels.get(row.source, row.source)
+        title = row.title or ""
+        parts.append(f"- [{label}] {title}: {row.content[:300]}")
 
     return "\n".join(parts)
 
 
-def search_candidates(query: str, top_k: int = 5) -> list[dict]:
-    collection = _get_collection()
-    results = collection.query(query_texts=[query], n_results=top_k)
+async def search_candidates(query: str, top_k: int = 5) -> list[dict]:
+    """PostgreSQL에서 이력서 유사도 검색으로 후보자를 찾는다."""
+    embedder = _get_embedder()
+    query_embedding = embedder.embed(query)
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            text(
+                "SELECT user_id, content, "
+                "1 - (embedding <=> :embedding::vector) AS similarity "
+                "FROM resume_chunks "
+                "ORDER BY embedding <=> :embedding::vector "
+                "LIMIT :limit"
+            ),
+            {
+                "embedding": str(query_embedding),
+                "limit": top_k * 3,  # 중복 user_id 제거를 위해 여유분 조회
+            },
+        )
+        rows = result.fetchall()
 
     seen = set()
     candidates = []
-    for doc, meta, distance in zip(
-        results["documents"][0],
-        results["metadatas"][0],
-        results["distances"][0],
-    ):
-        uid = meta.get("user_id")
-        if uid not in seen:
-            seen.add(uid)
+    for row in rows:
+        if row.user_id not in seen:
+            seen.add(row.user_id)
             candidates.append({
-                "user_id": uid,
-                "score": round(1 - distance, 4),
-                "matched_text": doc[:200],
+                "user_id": row.user_id,
+                "score": round(float(row.similarity), 4),
+                "matched_text": row.content[:200],
             })
+            if len(candidates) >= top_k:
+                break
 
     return candidates

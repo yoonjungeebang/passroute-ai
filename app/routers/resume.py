@@ -12,7 +12,7 @@ async def process_resume(user_id: str, file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
         raw_text = await run_in_threadpool(parse_resume, file_bytes, file.filename)
-        await run_in_threadpool(store_resume, user_id, raw_text)
+        await store_resume(user_id, raw_text)
 
         return {"status": "success", "user_id": user_id}
 
@@ -23,6 +23,6 @@ async def process_resume(user_id: str, file: UploadFile = File(...)):
 
 
 @router.get("/search")
-def search(query: str, top_k: int = 5):
-    results = search_candidates(query, top_k)
+async def search(query: str, top_k: int = 5):
+    results = await search_candidates(query, top_k)
     return {"query": query, "results": results}
