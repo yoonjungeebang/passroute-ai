@@ -60,51 +60,60 @@ update_image "$TARGET" "$IMAGE_TAG"
 echo "이미지 다운로드 중..."
 docker pull "$IMAGE_TAG"
 
-# 첫 배포: nginx + blue + redis 전부 시작
+# 첫 배포: nginx 없이 fastapi + redis만 먼저 시작, 이후 배포: 타겟만 시작
 if [ "$FIRST_DEPLOY" = true ]; then
-  echo "첫 배포 - 전체 서비스 시작 중..."
+  echo "첫 배포 - fastapi-blue + redis 시작 중..."
   sed -i "s|server fastapi-.*:8000;|server fastapi-blue:8000;|" /home/ubuntu/nginx/nginx.conf
-  docker compose up -d
+  docker compose up -d fastapi-blue
 else
-  # 타겟 컨테이너 시작
   echo "$TARGET 컨테이너 시작 중..."
   docker compose --profile "$TARGET" up -d "fastapi-$TARGET"
 fi
 
 # 헬스체크 (최대 120초)
 echo "헬스체크 대기 중..."
+HEALTH_OK=false
 for i in $(seq 1 24); do
   if docker compose exec "fastapi-$TARGET" curl -sf http://localhost:8000/health > /dev/null 2>&1; then
     echo "$TARGET 헬스체크 통과"
-
-    if [ "$FIRST_DEPLOY" = false ]; then
-      # nginx upstream을 타겟으로 전환
-      sed -i "s|server fastapi-.*:8000;|server fastapi-$TARGET:8000;|" /home/ubuntu/nginx/nginx.conf
-      docker compose exec nginx nginx -s reload
-
-      echo "트래픽 전환 완료: $CURRENT → $TARGET"
-
-      # 이전 컨테이너 종료
-      sleep 3
-      docker compose stop "fastapi-$CURRENT" 2>/dev/null || true
-      docker compose rm -f "fastapi-$CURRENT" 2>/dev/null || true
-    fi
-
-    # 미사용 이미지 정리
-    docker image prune -f
-
-    echo "===== 배포 완료 ====="
-    exit 0
+    HEALTH_OK=true
+    break
   fi
   echo "헬스체크 대기... ($i/24)"
   sleep 5
 done
 
-# 헬스체크 실패 시 타겟 컨테이너 제거 (기존 서비스 유지)
-echo "헬스체크 실패 - $TARGET 컨테이너 제거"
-docker compose stop "fastapi-$TARGET" 2>/dev/null || true
-docker compose rm -f "fastapi-$TARGET" 2>/dev/null || true
-if [ "$FIRST_DEPLOY" = true ]; then
-  docker compose down 2>/dev/null || true
+if [ "$HEALTH_OK" = false ]; then
+  echo "헬스체크 실패 - $TARGET 컨테이너 제거"
+  docker compose logs "fastapi-$TARGET" 2>&1 | tail -50
+  docker compose stop "fastapi-$TARGET" 2>/dev/null || true
+  docker compose rm -f "fastapi-$TARGET" 2>/dev/null || true
+  if [ "$FIRST_DEPLOY" = true ]; then
+    docker compose down 2>/dev/null || true
+  fi
+  exit 1
 fi
-exit 1
+
+# 헬스체크 통과 후 처리
+if [ "$FIRST_DEPLOY" = true ]; then
+  # 첫 배포: nginx도 시작
+  echo "nginx 시작 중..."
+  docker compose up -d nginx
+else
+  # nginx upstream을 타겟으로 전환
+  sed -i "s|server fastapi-.*:8000;|server fastapi-$TARGET:8000;|" /home/ubuntu/nginx/nginx.conf
+  docker compose exec nginx nginx -s reload
+
+  echo "트래픽 전환 완료: $CURRENT → $TARGET"
+
+  # 이전 컨테이너 종료
+  sleep 3
+  docker compose stop "fastapi-$CURRENT" 2>/dev/null || true
+  docker compose rm -f "fastapi-$CURRENT" 2>/dev/null || true
+fi
+
+# 미사용 이미지 정리
+docker image prune -f
+
+echo "===== 배포 완료 ====="
+exit 0
