@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
 
   fastapi-blue:
-    image: yaejin02/passroute-ai:develop
+    image: ${DEPLOY_IMAGE:-yaejin02/passroute-ai:develop}
     expose:
       - "8000"
     env_file: .env
@@ -22,9 +22,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    profiles:
+      - blue
 
   fastapi-green:
-    image: yaejin02/passroute-ai:develop
+    image: ${DEPLOY_IMAGE:-yaejin02/passroute-ai:develop}
     expose:
       - "8000"
     env_file: .env

@@ -21,19 +21,7 @@ echo "===== 롤백 시작: $PREVIOUS_SLOT ($PREVIOUS_IMAGE) ====="
 
 cd /home/ubuntu
 
-# 이미지 태그를 교체하는 함수 (sed 범위 문제 방지)
-update_image() {
-  local SERVICE=$1
-  local TAG=$2
-  if [ "$SERVICE" = "blue" ]; then
-    sed -i "/fastapi-blue:/,/healthcheck:/{s|image:.*|image: $TAG|}" docker-compose.yml
-  else
-    sed -i "/fastapi-green:/,/profiles:/{s|image:.*|image: $TAG|}" docker-compose.yml
-  fi
-}
-
-# 이전 슬롯의 이미지 복원
-update_image "$PREVIOUS_SLOT" "$PREVIOUS_IMAGE"
+export DEPLOY_IMAGE="$PREVIOUS_IMAGE"
 
 # 이전 슬롯 컨테이너 시작
 docker compose --profile "$PREVIOUS_SLOT" up -d "fastapi-$PREVIOUS_SLOT"
@@ -41,17 +29,17 @@ docker compose --profile "$PREVIOUS_SLOT" up -d "fastapi-$PREVIOUS_SLOT"
 # 헬스체크 (최대 120초)
 echo "헬스체크 대기 중..."
 for i in $(seq 1 24); do
-  if docker compose exec "fastapi-$PREVIOUS_SLOT" curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+  if docker compose --profile "$PREVIOUS_SLOT" exec "fastapi-$PREVIOUS_SLOT" curl -sf http://localhost:8000/health > /dev/null 2>&1; then
     echo "롤백 헬스체크 통과"
 
     # nginx upstream 전환
     sed -i "s|server fastapi-.*:8000;|server fastapi-$PREVIOUS_SLOT:8000;|" /home/ubuntu/nginx/nginx.conf
-    docker compose exec nginx nginx -s reload
+    docker compose --profile "$PREVIOUS_SLOT" exec nginx nginx -s reload
 
     # 반대쪽 실패 컨테이너 정리
     if [ "$PREVIOUS_SLOT" = "blue" ]; then OTHER="green"; else OTHER="blue"; fi
-    docker compose stop "fastapi-$OTHER" 2>/dev/null || true
-    docker compose rm -f "fastapi-$OTHER" 2>/dev/null || true
+    docker compose --profile "$OTHER" stop "fastapi-$OTHER" 2>/dev/null || true
+    docker compose --profile "$OTHER" rm -f "fastapi-$OTHER" 2>/dev/null || true
 
     echo "===== 롤백 완료 ====="
     exit 0
@@ -60,5 +48,5 @@ for i in $(seq 1 24); do
 done
 
 echo "롤백 헬스체크 실패"
-docker compose logs "fastapi-$PREVIOUS_SLOT"
+docker compose --profile "$PREVIOUS_SLOT" logs "fastapi-$PREVIOUS_SLOT"
 exit 1
