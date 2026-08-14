@@ -2,20 +2,17 @@
 FROM python:3.12-slim AS builder
 
 RUN pip install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir \
-    "optimum[onnxruntime]" transformers
-
-RUN optimum-cli export onnx \
+    torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir \
+    optimum==1.24.0 onnxruntime==1.23.2 transformers==4.44.2 \
+    && optimum-cli export onnx \
     --model snunlp/KR-SBERT-V40K-klueNLI-augSTS \
     /tmp/onnx_model/ \
-    --task feature-extraction
-
-RUN python -c "\
+    --task feature-extraction \
+    && python -c "\
 from onnxruntime.quantization import quantize_dynamic, QuantType; \
-quantize_dynamic('/tmp/onnx_model/model.onnx', '/tmp/kr-sbert-uint8.onnx', weight_type=QuantType.QUInt8)"
-
-RUN python -c "\
+quantize_dynamic('/tmp/onnx_model/model.onnx', '/tmp/kr-sbert-uint8.onnx', weight_type=QuantType.QUInt8)" \
+    && python -c "\
 from transformers import AutoTokenizer; \
 t = AutoTokenizer.from_pretrained('snunlp/KR-SBERT-V40K-klueNLI-augSTS'); \
 t.save_pretrained('/tmp/tokenizer/')"
@@ -25,6 +22,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libgl1 \
