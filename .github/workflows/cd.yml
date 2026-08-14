@@ -58,6 +58,8 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ steps.vars.outputs.branch }}
             ${{ steps.vars.outputs.image_tag }}
+          build-args: |
+            MODELS_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:models
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -83,14 +85,8 @@ jobs:
           declare -A PARAMS
           PARAMS[AI_DATABASE_URL]="${{ secrets.AI_DATABASE_URL }}"
           PARAMS[AI_REDIS_URL]="${{ secrets.AI_REDIS_URL }}"
-          PARAMS[AI_OPENAI_API_KEY]="${{ secrets.AI_OPENAI_API_KEY }}"
-          PARAMS[AI_ANTHROPIC_API_KEY]="${{ secrets.AI_ANTHROPIC_API_KEY }}"
-          PARAMS[AI_GEMINI_API_KEY]="${{ secrets.AI_GEMINI_API_KEY }}"
-          PARAMS[AI_CLOVA_SECRET_KEY]="${{ secrets.AI_CLOVA_SECRET_KEY }}"
-          PARAMS[AI_CLOVA_INVOKE_URL]="${{ secrets.AI_CLOVA_INVOKE_URL }}"
-          PARAMS[AI_AWS_ACCESS_KEY_ID]="${{ secrets.AI_AWS_ACCESS_KEY_ID }}"
-          PARAMS[AI_AWS_SECRET_ACCESS_KEY]="${{ secrets.AI_AWS_SECRET_ACCESS_KEY }}"
-          PARAMS[AI_AWS_S3_BUCKET_NAME]="${{ secrets.AI_AWS_S3_BUCKET_NAME }}"
+          PARAMS[AI_AWS_ACCESS_KEY_ID]="${{ secrets.AWS_ACCESS_KEY }}"
+          PARAMS[AI_AWS_SECRET_ACCESS_KEY]="${{ secrets.AWS_SECRET_KEY }}"
 
           for KEY in "${!PARAMS[@]}"; do
             aws ssm put-parameter \
