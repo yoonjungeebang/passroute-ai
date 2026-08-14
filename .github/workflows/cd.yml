@@ -80,27 +80,25 @@ jobs:
 
       - name: Store .env in SSM Parameter Store
         run: |
-          ENV_CONTENT=$(cat <<'ENVFILE'
-          DATABASE_URL=${{ secrets.AI_DATABASE_URL }}
-          REDIS_URL=${{ secrets.AI_REDIS_URL }}
-          OPENAI_API_KEY=${{ secrets.AI_OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY=${{ secrets.AI_ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY=${{ secrets.AI_GEMINI_API_KEY }}
-          CLOVA_SECRET_KEY=${{ secrets.AI_CLOVA_SECRET_KEY }}
-          CLOVA_INVOKE_URL=${{ secrets.AI_CLOVA_INVOKE_URL }}
-          AWS_ACCESS_KEY_ID=${{ secrets.AI_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY=${{ secrets.AI_AWS_SECRET_ACCESS_KEY }}
-          AWS_S3_BUCKET_NAME=${{ secrets.AI_AWS_S3_BUCKET_NAME }}
-          ENVFILE
-          )
+          declare -A PARAMS
+          PARAMS[AI_DATABASE_URL]="${{ secrets.AI_DATABASE_URL }}"
+          PARAMS[AI_REDIS_URL]="${{ secrets.AI_REDIS_URL }}"
+          PARAMS[AI_OPENAI_API_KEY]="${{ secrets.AI_OPENAI_API_KEY }}"
+          PARAMS[AI_ANTHROPIC_API_KEY]="${{ secrets.AI_ANTHROPIC_API_KEY }}"
+          PARAMS[AI_GEMINI_API_KEY]="${{ secrets.AI_GEMINI_API_KEY }}"
+          PARAMS[AI_CLOVA_SECRET_KEY]="${{ secrets.AI_CLOVA_SECRET_KEY }}"
+          PARAMS[AI_CLOVA_INVOKE_URL]="${{ secrets.AI_CLOVA_INVOKE_URL }}"
+          PARAMS[AI_AWS_ACCESS_KEY_ID]="${{ secrets.AI_AWS_ACCESS_KEY_ID }}"
+          PARAMS[AI_AWS_SECRET_ACCESS_KEY]="${{ secrets.AI_AWS_SECRET_ACCESS_KEY }}"
+          PARAMS[AI_AWS_S3_BUCKET_NAME]="${{ secrets.AI_AWS_S3_BUCKET_NAME }}"
 
-          ENV_CONTENT=$(echo "$ENV_CONTENT" | sed 's/^[[:space:]]*//')
-
-          aws ssm put-parameter \
-            --name "/passroute-ai/env" \
-            --type "SecureString" \
-            --value "$ENV_CONTENT" \
-            --overwrite
+          for KEY in "${!PARAMS[@]}"; do
+            aws ssm put-parameter \
+              --name "/passroute/dev/${KEY}" \
+              --type "SecureString" \
+              --value "${PARAMS[$KEY]}" \
+              --overwrite
+          done
 
       - name: Create .env on EC2 via SSM
         run: |
@@ -109,7 +107,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "Create AI server .env from Parameter Store" \
             --timeout-seconds 30 \
-            --parameters 'commands=["aws ssm get-parameter --name /passroute-ai/env --with-decryption --query Parameter.Value --output text > /home/ubuntu/.env && chown ubuntu:ubuntu /home/ubuntu/.env"]' \
+            --parameters 'commands=["PARAMS=$(aws ssm get-parameters-by-path --path /passroute/dev/AI_ --with-decryption --query \"Parameters[*].[Name,Value]\" --output text) && echo \"$PARAMS\" | while read -r NAME VALUE; do KEY=$(echo \"$NAME\" | sed \"s|/passroute/dev/AI_||\"); echo \"${KEY}=${VALUE}\"; done > /home/ubuntu/.env && chown ubuntu:ubuntu /home/ubuntu/.env"]' \
             --query 'Command.CommandId' --output text)
 
           aws ssm wait command-executed \
