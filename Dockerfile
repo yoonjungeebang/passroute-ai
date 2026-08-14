@@ -4,7 +4,7 @@ FROM python:3.12-slim AS builder
 RUN pip install --no-cache-dir \
     torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir \
-    optimum==1.24.0 onnx onnxruntime==1.23.2 transformers==4.44.2 \
+    optimum==1.24.0 onnx==1.22.0 onnxruntime==1.23.2 transformers==4.44.2 \
     && optimum-cli export onnx \
     --model snunlp/KR-SBERT-V40K-klueNLI-augSTS \
     /tmp/onnx_model/ \
