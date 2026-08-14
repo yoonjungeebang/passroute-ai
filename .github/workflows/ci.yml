@@ -32,18 +32,16 @@ jobs:
         run: pip install pytest pytest-asyncio
 
       - name: Run tests
-        shell: bash {0}
-        run: |
-          pytest --tb=short -q --ignore=test_follow_up.py
-          rc=$?
-          if [ $rc -eq 5 ]; then echo "테스트 파일 없음 - 스킵"; exit 0; else exit $rc; fi
+        run: pytest tests/ --tb=short -q --ignore=test_follow_up.py
         env:
           TESTING: "true"
           DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
           REDIS_URL: "redis://localhost:6379"
 
-      - name: Verify Dockerfile builds (syntax check)
-        uses: docker/setup-buildx-action@v3
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
 
       - name: CI Success Notification
         uses: sarisia/actions-status-discord@v1
