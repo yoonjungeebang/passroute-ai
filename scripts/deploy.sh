@@ -90,7 +90,12 @@ if [ "$FIRST_DEPLOY" = true ]; then
 else
   # nginx upstream을 타겟으로 전환
   sed -i "s|server fastapi-.*:8000;|server fastapi-$TARGET:8000;|" /home/ubuntu/nginx/nginx.conf
-  docker compose exec nginx nginx -s reload
+  if docker compose ps nginx --format '{{.Name}}' 2>/dev/null | grep -q "nginx"; then
+    docker compose exec nginx nginx -s reload
+  else
+    echo "nginx 컨테이너 없음 → 새로 시작"
+    docker compose up -d nginx
+  fi
 
   echo "트래픽 전환 완료: $CURRENT → $TARGET"
 

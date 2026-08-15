@@ -34,7 +34,12 @@ for i in $(seq 1 24); do
 
     # nginx upstream 전환
     sed -i "s|server fastapi-.*:8000;|server fastapi-$PREVIOUS_SLOT:8000;|" /home/ubuntu/nginx/nginx.conf
-    docker compose exec nginx nginx -s reload
+    if docker compose ps nginx --format '{{.Name}}' 2>/dev/null | grep -q "nginx"; then
+      docker compose exec nginx nginx -s reload
+    else
+      echo "nginx 컨테이너 없음 → 새로 시작"
+      docker compose up -d nginx
+    fi
 
     # 반대쪽 실패 컨테이너 정리
     if [ "$PREVIOUS_SLOT" = "blue" ]; then OTHER="green"; else OTHER="blue"; fi
