@@ -19,7 +19,7 @@ jobs:
 
     outputs:
       branch: ${{ steps.vars.outputs.branch }}
-      image_tag: ${{ steps.vars.outputs.image_tag }}
+      sha: ${{ steps.vars.outputs.sha }}
 
     steps:
       - name: Checkout
@@ -36,9 +36,8 @@ jobs:
           else
             TAG_PREFIX="develop"
           fi
-          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${TAG_PREFIX}-${{ github.event.workflow_run.head_sha }}"
           echo "branch=$TAG_PREFIX" >> "$GITHUB_OUTPUT"
-          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -57,7 +56,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ steps.vars.outputs.branch }}
-            ${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ steps.vars.outputs.branch }}-${{ steps.vars.outputs.sha }}
           build-args: |
             MODELS_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:models
           cache-from: type=gha
@@ -149,7 +148,7 @@ jobs:
             --comment "Deploy passroute-ai (${{ needs.build-and-push.outputs.branch }})" \
             --timeout-seconds 600 \
             --parameters 'commands=[
-              "cd /home/ubuntu && bash deploy.sh ${{ needs.build-and-push.outputs.image_tag }}"
+              "cd /home/ubuntu && bash deploy.sh ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ needs.build-and-push.outputs.branch }}-${{ needs.build-and-push.outputs.sha }}"
             ]' \
             --query 'Command.CommandId' \
             --output text)
