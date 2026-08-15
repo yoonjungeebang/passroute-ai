@@ -86,11 +86,11 @@ fi
 if [ "$FIRST_DEPLOY" = true ]; then
   # 첫 배포: nginx도 시작
   echo "nginx 시작 중..."
-  docker compose --profile blue up -d nginx
+  docker compose up -d nginx
 else
   # nginx upstream을 타겟으로 전환
   sed -i "s|server fastapi-.*:8000;|server fastapi-$TARGET:8000;|" /home/ubuntu/nginx/nginx.conf
-  docker compose --profile "$TARGET" exec nginx nginx -s reload
+  docker compose exec nginx nginx -s reload
 
   echo "트래픽 전환 완료: $CURRENT → $TARGET"
 
