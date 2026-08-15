@@ -80,42 +80,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
           aws-region: ap-northeast-2
 
-      - name: Store .env in SSM Parameter Store
-        run: |
-          declare -A PARAMS
-          PARAMS[AI_DATABASE_URL]="${{ secrets.AI_DATABASE_URL }}"
-          PARAMS[AI_REDIS_URL]="${{ secrets.AI_REDIS_URL }}"
-          PARAMS[AI_AWS_ACCESS_KEY_ID]="${{ secrets.AWS_ACCESS_KEY }}"
-          PARAMS[AI_AWS_SECRET_ACCESS_KEY]="${{ secrets.AWS_SECRET_KEY }}"
-
-          for KEY in "${!PARAMS[@]}"; do
-            aws ssm put-parameter \
-              --name "/passroute/dev/${KEY}" \
-              --type "SecureString" \
-              --value "${PARAMS[$KEY]}" \
-              --overwrite
-          done
-
-      - name: Create .env on EC2 via SSM
-        run: |
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Create AI server .env from Parameter Store" \
-            --timeout-seconds 30 \
-            --parameters 'commands=["PARAMS=$(aws ssm get-parameters-by-path --path /passroute/dev/AI_ --with-decryption --query \"Parameters[*].[Name,Value]\" --output text) && echo \"$PARAMS\" | while read -r NAME VALUE; do KEY=$(echo \"$NAME\" | sed \"s|/passroute/dev/AI_||\"); echo \"${KEY}=${VALUE}\"; done > /home/ubuntu/.env && chown ubuntu:ubuntu /home/ubuntu/.env"]' \
-            --query 'Command.CommandId' --output text)
-
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}"
-
       - name: Sync deploy files via SSM
         run: |
+          cat > /tmp/app.env << 'ENVEOF'
+          DATABASE_URL=${{ secrets.AI_DATABASE_URL }}
+          REDIS_URL=${{ secrets.AI_REDIS_URL }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_KEY }}
+          ENVEOF
+          sed -i 's/^ *//' /tmp/app.env
+
           COMPOSE_B64=$(base64 -w0 < docker-compose.yml)
           DEPLOY_B64=$(base64 -w0 < scripts/deploy.sh)
           ROLLBACK_B64=$(base64 -w0 < scripts/rollback.sh)
           NGINX_B64=$(base64 -w0 < nginx/nginx.conf)
+          ENV_B64=$(base64 -w0 < /tmp/app.env)
 
           jq -n \
             --arg inst "${{ secrets.AI_EC2_INSTANCE_ID }}" \
@@ -124,13 +103,14 @@ jobs:
             --arg c3 "mkdir -p /home/ubuntu/nginx" \
             --arg c4 "echo $NGINX_B64 | base64 -d > /home/ubuntu/nginx/nginx.conf" \
             --arg c5 "echo $ROLLBACK_B64 | base64 -d > /home/ubuntu/rollback.sh && chmod +x /home/ubuntu/rollback.sh" \
-            --arg c6 "chown -R ubuntu:ubuntu /home/ubuntu/docker-compose.yml /home/ubuntu/deploy.sh /home/ubuntu/rollback.sh /home/ubuntu/nginx" \
+            --arg c6 "echo $ENV_B64 | base64 -d > /home/ubuntu/.env" \
+            --arg c7 "chown -R ubuntu:ubuntu /home/ubuntu/docker-compose.yml /home/ubuntu/deploy.sh /home/ubuntu/rollback.sh /home/ubuntu/nginx /home/ubuntu/.env" \
             '{
               InstanceIds: [$inst],
               DocumentName: "AWS-RunShellScript",
               Comment: "Sync deploy files",
               TimeoutSeconds: 30,
-              Parameters: { commands: [$c1, $c2, $c3, $c4, $c5, $c6] }
+              Parameters: { commands: [$c1, $c2, $c3, $c4, $c5, $c6, $c7] }
             }' > /tmp/ssm-sync.json
 
           COMMAND_ID=$(aws ssm send-command \
