@@ -23,21 +23,32 @@ cd /home/ubuntu
 
 export DEPLOY_IMAGE="$PREVIOUS_IMAGE"
 
+# 롤백 실패 시 컨테이너 자동 정리
+CLEANUP_SLOT="$PREVIOUS_SLOT"
+cleanup() {
+  if [ -n "$CLEANUP_SLOT" ]; then
+    echo "롤백 실패 → $CLEANUP_SLOT 컨테이너 정리 중..."
+    docker compose --profile "$CLEANUP_SLOT" stop "fastapi-$CLEANUP_SLOT" 2>/dev/null || true
+    docker compose --profile "$CLEANUP_SLOT" rm -f "fastapi-$CLEANUP_SLOT" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 # 이전 슬롯 컨테이너 시작
 docker compose --profile "$PREVIOUS_SLOT" up -d "fastapi-$PREVIOUS_SLOT"
 
 # 헬스체크 (최대 120초)
 echo "헬스체크 대기 중..."
 for i in $(seq 1 24); do
-  if docker compose --profile "$PREVIOUS_SLOT" exec "fastapi-$PREVIOUS_SLOT" curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+  if docker compose --profile "$PREVIOUS_SLOT" exec "fastapi-$PREVIOUS_SLOT" python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" > /dev/null 2>&1; then
     echo "롤백 헬스체크 통과"
 
     # nginx upstream 전환
     sed -i "s|server fastapi-.*:8000;|server fastapi-$PREVIOUS_SLOT:8000;|" /home/ubuntu/nginx/nginx.conf
-    if docker compose ps nginx --format '{{.Name}}' 2>/dev/null | grep -q "nginx"; then
-      docker compose exec nginx nginx -s reload
+    echo "nginx 재시작 중..."
+    if docker compose ps nginx --format '{{.State}}' 2>/dev/null | grep -q "running"; then
+      docker compose restart nginx
     else
-      echo "nginx 컨테이너 없음 → 새로 시작"
       docker compose up -d nginx
     fi
 
@@ -46,6 +57,7 @@ for i in $(seq 1 24); do
     docker compose --profile "$OTHER" stop "fastapi-$OTHER" 2>/dev/null || true
     docker compose --profile "$OTHER" rm -f "fastapi-$OTHER" 2>/dev/null || true
 
+    CLEANUP_SLOT=""
     echo "===== 롤백 완료 ====="
     exit 0
   fi

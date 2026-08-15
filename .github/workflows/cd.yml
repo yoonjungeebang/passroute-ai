@@ -6,6 +6,10 @@ on:
     types: [completed]
     branches: [develop, main]
 
+concurrency:
+  group: deploy-ai
+  cancel-in-progress: false
+
 permissions:
   contents: read
   actions: read
@@ -100,7 +104,7 @@ jobs:
             --arg c1 "echo $COMPOSE_B64 | base64 -d > /home/ubuntu/docker-compose.yml" \
             --arg c2 "echo $DEPLOY_B64 | base64 -d > /home/ubuntu/deploy.sh && chmod +x /home/ubuntu/deploy.sh" \
             --arg c3 "mkdir -p /home/ubuntu/nginx" \
-            --arg c4 "echo $NGINX_B64 | base64 -d > /home/ubuntu/nginx/nginx.conf" \
+            --arg c4 "test -f /home/ubuntu/nginx/nginx.conf || echo $NGINX_B64 | base64 -d > /home/ubuntu/nginx/nginx.conf" \
             --arg c5 "echo $ROLLBACK_B64 | base64 -d > /home/ubuntu/rollback.sh && chmod +x /home/ubuntu/rollback.sh" \
             --arg c6 "echo $ENV_B64 | base64 -d > /home/ubuntu/.env" \
             --arg c7 "chown -R ubuntu:ubuntu /home/ubuntu/docker-compose.yml /home/ubuntu/deploy.sh /home/ubuntu/rollback.sh /home/ubuntu/nginx /home/ubuntu/.env" \

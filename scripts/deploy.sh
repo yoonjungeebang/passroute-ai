@@ -14,6 +14,17 @@ cd /home/ubuntu
 
 export DEPLOY_IMAGE="$IMAGE_TAG"
 
+# 배포 실패 시 타겟 컨테이너 자동 정리
+CLEANUP_TARGET=""
+cleanup() {
+  if [ -n "$CLEANUP_TARGET" ]; then
+    echo "배포 실패 → $CLEANUP_TARGET 컨테이너 정리 중..."
+    docker compose --profile "$CLEANUP_TARGET" stop "fastapi-$CLEANUP_TARGET" 2>/dev/null || true
+    docker compose --profile "$CLEANUP_TARGET" rm -f "fastapi-$CLEANUP_TARGET" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 # 첫 배포 여부 확인
 FIRST_DEPLOY=false
 if ! docker compose --profile blue --profile green ps --format '{{.Name}}' 2>/dev/null | grep -q "fastapi"; then
@@ -53,16 +64,18 @@ if [ "$FIRST_DEPLOY" = true ]; then
   echo "첫 배포 - fastapi-blue + redis 시작 중..."
   sed -i "s|server fastapi-.*:8000;|server fastapi-blue:8000;|" /home/ubuntu/nginx/nginx.conf
   docker compose --profile blue up -d fastapi-blue
+  CLEANUP_TARGET="blue"
 else
   echo "$TARGET 컨테이너 시작 중..."
   docker compose --profile "$TARGET" up -d "fastapi-$TARGET"
+  CLEANUP_TARGET="$TARGET"
 fi
 
 # 헬스체크 (최대 180초)
 echo "헬스체크 대기 중..."
 HEALTH_OK=false
 for i in $(seq 1 36); do
-  if docker compose --profile "$TARGET" exec "fastapi-$TARGET" curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+  if docker compose --profile "$TARGET" exec "fastapi-$TARGET" python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" > /dev/null 2>&1; then
     echo "$TARGET 헬스체크 통과"
     HEALTH_OK=true
     break
@@ -74,11 +87,6 @@ done
 if [ "$HEALTH_OK" = false ]; then
   echo "헬스체크 실패 - $TARGET 컨테이너 제거"
   docker compose --profile "$TARGET" logs "fastapi-$TARGET" 2>&1 | tail -50
-  docker compose --profile "$TARGET" stop "fastapi-$TARGET" 2>/dev/null || true
-  docker compose --profile "$TARGET" rm -f "fastapi-$TARGET" 2>/dev/null || true
-  if [ "$FIRST_DEPLOY" = true ]; then
-    docker compose --profile blue down 2>/dev/null || true
-  fi
   exit 1
 fi
 
@@ -90,10 +98,10 @@ if [ "$FIRST_DEPLOY" = true ]; then
 else
   # nginx upstream을 타겟으로 전환
   sed -i "s|server fastapi-.*:8000;|server fastapi-$TARGET:8000;|" /home/ubuntu/nginx/nginx.conf
-  if docker compose ps nginx --format '{{.Name}}' 2>/dev/null | grep -q "nginx"; then
-    docker compose exec nginx nginx -s reload
+  echo "nginx 재시작 중..."
+  if docker compose ps nginx --format '{{.State}}' 2>/dev/null | grep -q "running"; then
+    docker compose restart nginx
   else
-    echo "nginx 컨테이너 없음 → 새로 시작"
     docker compose up -d nginx
   fi
 
@@ -104,6 +112,9 @@ else
   docker compose --profile "$CURRENT" stop "fastapi-$CURRENT" 2>/dev/null || true
   docker compose --profile "$CURRENT" rm -f "fastapi-$CURRENT" 2>/dev/null || true
 fi
+
+# 배포 성공 → cleanup 비활성화
+CLEANUP_TARGET=""
 
 # 미사용 이미지 정리
 docker image prune -f
