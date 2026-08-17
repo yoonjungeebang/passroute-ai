@@ -13,6 +13,7 @@ concurrency:
 permissions:
   contents: read
   actions: read
+  id-token: write
 
 jobs:
   build-and-push:
@@ -79,8 +80,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-2
 
       - name: Sync deploy files via SSM
@@ -88,8 +88,6 @@ jobs:
           cat > /tmp/app.env << 'ENVEOF'
           DATABASE_URL=${{ secrets.AI_DATABASE_URL }}
           REDIS_URL=${{ secrets.AI_REDIS_URL }}
-          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_KEY }}
           ENVEOF
           sed -i 's/^ *//' /tmp/app.env
 
