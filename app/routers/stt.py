@@ -221,8 +221,14 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
             try:
                 async with AsyncSessionLocal() as db:
                     async with db.begin():
+                        # interview_answers에는 session_id 컬럼이 없다 (FK는 question_id뿐).
+                        # 세션 검증은 interview_questions 조인으로 수행한다.
                         result = await db.execute(
-                            text("UPDATE interview_answers SET answer_text = :answer_text WHERE session_id = :session_id AND question_id = :question_id"),
+                            text(
+                                "UPDATE interview_answers a SET answer_text = :answer_text "
+                                "FROM interview_questions q "
+                                "WHERE a.question_id = q.id AND q.id = :question_id AND q.session_id = :session_id"
+                            ),
                             {"answer_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
                         )
                 if result.rowcount == 0:
