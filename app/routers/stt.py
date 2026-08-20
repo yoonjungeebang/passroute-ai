@@ -198,9 +198,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
         except Exception as e:
             logger.error(f"STT 워커 태스크 에러: {e}")
 
+        avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
+        avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
+
+        # 지표와 answer_text는 별도 트랜잭션: 한쪽 실패가 다른 쪽 저장을 롤백하지 않도록
         try:
-            avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
-            avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
             async with AsyncSessionLocal() as db:
                 async with db.begin():
                     db.add(VoiceAnalysis(
@@ -210,15 +212,25 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
                         avg_silence_duration=avg_silence_duration,
                         filler_count=filler_count_total,
                     ))
-                    if stt_parts:
-                        full_text = " ".join(stt_parts)
-                        await db.execute(
+            logger.info(f"[{session_id}:{question_id}] 음성 분석 결과 저장 완료")
+        except Exception:
+            logger.exception(f"[{session_id}:{question_id}] 음성 분석 결과 저장 실패")
+
+        if stt_parts:
+            full_text = " ".join(stt_parts)
+            try:
+                async with AsyncSessionLocal() as db:
+                    async with db.begin():
+                        result = await db.execute(
                             text("UPDATE interview_answers SET answer_text = :answer_text WHERE session_id = :session_id AND question_id = :question_id"),
                             {"answer_text": full_text, "session_id": int(session_id), "question_id": int(question_id)},
                         )
-            logger.info(f"[{session_id}:{question_id}] 음성 분석 결과 및 answer_text MySQL 저장 완료")
-        except Exception as e:
-            logger.error(f"음성 분석 결과 MySQL 저장 에러: {e}")
+                if result.rowcount == 0:
+                    logger.error(f"[{session_id}:{question_id}] answer_text UPDATE 0행 - 대상 답변 행 없음")
+                else:
+                    logger.info(f"[{session_id}:{question_id}] answer_text 저장 완료 ({result.rowcount}행)")
+            except Exception:
+                logger.exception(f"[{session_id}:{question_id}] answer_text 저장 실패")
 
 
 @router.websocket("/ws/stt/debate/{session_id}/{round_type}")
@@ -391,9 +403,11 @@ async def debate_stt_websocket(websocket: WebSocket, session_id: str, round_type
         except Exception as e:
             logger.error(f"토론 STT 워커 태스크 에러: {e}")
 
+        avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
+        avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
+
+        # 지표와 pending_stt는 별도 트랜잭션: 한쪽 실패가 다른 쪽 저장을 롤백하지 않도록
         try:
-            avg_wpm = round(total_words / total_speech_sec * 60, 2) if total_speech_sec > 0 else 0.0
-            avg_silence_duration = round(sum(silence_values) / len(silence_values), 2) if silence_values else 0.0
             async with AsyncSessionLocal() as db:
                 async with db.begin():
                     db.add(VoiceAnalysis(
@@ -403,12 +417,22 @@ async def debate_stt_websocket(websocket: WebSocket, session_id: str, round_type
                         avg_silence_duration=avg_silence_duration,
                         filler_count=filler_count_total,
                     ))
-                    if stt_parts:
-                        full_text = " ".join(stt_parts)
-                        await db.execute(
+            logger.info(f"[debate {session_id}:{round_type}] 음성 분석 결과 저장 완료")
+        except Exception:
+            logger.exception(f"[debate {session_id}:{round_type}] 음성 분석 결과 저장 실패")
+
+        if stt_parts:
+            full_text = " ".join(stt_parts)
+            try:
+                async with AsyncSessionLocal() as db:
+                    async with db.begin():
+                        result = await db.execute(
                             text("UPDATE debate_sessions SET pending_stt = :pending_stt WHERE id = :session_id"),
                             {"pending_stt": full_text, "session_id": int(session_id)},
                         )
-            logger.info(f"[debate {session_id}:{round_type}] 음성 분석 결과 및 pending_stt MySQL 저장 완료")
-        except Exception as e:
-            logger.error(f"토론 음성 분석 결과 MySQL 저장 에러: {e}")
+                if result.rowcount == 0:
+                    logger.error(f"[debate {session_id}:{round_type}] pending_stt UPDATE 0행 - 대상 세션 행 없음")
+                else:
+                    logger.info(f"[debate {session_id}:{round_type}] pending_stt 저장 완료 ({result.rowcount}행)")
+            except Exception:
+                logger.exception(f"[debate {session_id}:{round_type}] pending_stt 저장 실패")
