@@ -156,21 +156,21 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
             logger.error(f"face_mesh 닫기 실패: {e}")
 
         duration_sec = round(time.time() - start_time, 2)
+        avg_gaze_ratio = round(sum(gaze_ratio_values) / len(gaze_ratio_values), 2) if gaze_ratio_values else 0.0
+        avg_blink_per_min = round(total_blink_count / (duration_sec / 60), 2) if duration_sec > 0 else 0.0
         try:
-            avg_gaze_ratio = round(sum(gaze_ratio_values) / len(gaze_ratio_values), 2) if gaze_ratio_values else 0.0
-            avg_blink_per_min = round(total_blink_count / (duration_sec / 60), 2) if duration_sec > 0 else 0.0
             async with AsyncSessionLocal() as db:
-                db.add(FaceAnalysis(
-                    session_id=session_id,
-                    question_id=question_id,
-                    gaze_off_count=gaze_off_count,
-                    avg_gaze_ratio=avg_gaze_ratio,
-                    avg_blink_per_min=avg_blink_per_min,
-                ))
-                await db.commit()
-            logger.info(f"[{session_id}:{question_id}] 영상 분석 결과 MySQL 저장 완료")
-        except Exception as e:
-            logger.error(f"영상 분석 결과 MySQL 저장 에러: {e}")
+                async with db.begin():
+                    db.add(FaceAnalysis(
+                        session_id=session_id,
+                        question_id=question_id,
+                        gaze_off_count=gaze_off_count,
+                        avg_gaze_ratio=avg_gaze_ratio,
+                        avg_blink_per_min=avg_blink_per_min,
+                    ))
+            logger.info(f"[{session_id}:{question_id}] 영상 분석 결과 저장 완료")
+        except Exception:
+            logger.exception(f"[{session_id}:{question_id}] 영상 분석 결과 저장 실패")
 
 
 @router.get("/face/summary/{session_id}/{question_id}")
