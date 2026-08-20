@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 @router.post("/interview/{session_id}/end")
-async def end_interview(session_id: str, db: AsyncSession = Depends(get_db)):
+async def end_interview(session_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(
             func.avg(VoiceAnalysis.avg_wpm).label("avg_wpm"),

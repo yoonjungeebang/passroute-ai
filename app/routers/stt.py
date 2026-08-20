@@ -25,11 +25,8 @@ MIN_SILENCE_DURATION = 0.5
 
 
 @router.websocket("/ws/stt/{session_id}/{question_id}")
-async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str):
+async def stt_websocket(websocket: WebSocket, session_id: int, question_id: int):
     await websocket.accept()
-    if not session_id.isdigit() or not question_id.isdigit():
-        await websocket.close(code=1008)
-        return
     audio_chunks = []
     ws_lock = asyncio.Lock()
     stt_queue: asyncio.Queue = asyncio.Queue()
@@ -240,11 +237,11 @@ async def stt_websocket(websocket: WebSocket, session_id: str, question_id: str)
 
 
 @router.websocket("/ws/stt/debate/{session_id}/{round_type}")
-async def debate_stt_websocket(websocket: WebSocket, session_id: str, round_type: str):
+async def debate_stt_websocket(websocket: WebSocket, session_id: int, round_type: str):
     await websocket.accept()
     round_type = round_type.upper()
     ALLOWED_ROUNDS = {"OPENING", "REBUTTAL_1", "REBUTTAL_2", "CLOSING"}
-    if not session_id.isdigit() or round_type not in ALLOWED_ROUNDS:
+    if round_type not in ALLOWED_ROUNDS:
         await websocket.close(code=1008)
         return
     audio_chunks = []

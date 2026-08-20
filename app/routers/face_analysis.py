@@ -26,7 +26,7 @@ GAZE_RATIO_SAMPLE_INTERVAL = 30
 
 
 @router.websocket("/ws/face/{session_id}/{question_id}")
-async def face_websocket(websocket: WebSocket, session_id: str, question_id: str):
+async def face_websocket(websocket: WebSocket, session_id: int, question_id: int):
     await websocket.accept()
     ws_lock = asyncio.Lock()
     is_connected = True
@@ -174,7 +174,7 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
 
 
 @router.get("/face/summary/{session_id}/{question_id}")
-async def get_face_analysis_summary(session_id: str, question_id: str):
+async def get_face_analysis_summary(session_id: int, question_id: int):
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(FaceAnalysis)
@@ -182,7 +182,7 @@ async def get_face_analysis_summary(session_id: str, question_id: str):
                 FaceAnalysis.session_id == session_id,
                 FaceAnalysis.question_id == question_id,
             )
-            .order_by(FaceAnalysis.created_at.desc())
+            .order_by(FaceAnalysis.id.desc())
             .limit(1)
         )
         row = result.scalars().first()
