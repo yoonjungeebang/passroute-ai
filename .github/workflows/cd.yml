@@ -34,15 +34,18 @@ jobs:
 
       - name: Determine branch and image tag
         id: vars
+        env:
+          HEAD_BRANCH: "${{ github.event.workflow_run.head_branch }}"
+          HEAD_SHA: "${{ github.event.workflow_run.head_sha }}"
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          BRANCH="$HEAD_BRANCH"
           if [ "$BRANCH" = "main" ]; then
             TAG_PREFIX="main"
           else
             TAG_PREFIX="develop"
           fi
           echo "branch=$TAG_PREFIX" >> "$GITHUB_OUTPUT"
-          echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -63,7 +66,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ steps.vars.outputs.branch }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ steps.vars.outputs.branch }}-${{ steps.vars.outputs.sha }}
           build-args: |
-            MODELS_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:models
+            BASE_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:base
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -72,17 +75,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-
-      - name: Debug OIDC token claims
-        run: |
-          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
-          echo "$OIDC_TOKEN" | jq -r '.value' | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, aud, iss}'
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -90,34 +82,107 @@ jobs:
           aws-region: ap-northeast-2
 
       - name: Sync deploy files via SSM
+        env:
+          AI_DATABASE_URL: "${{ secrets.AI_DATABASE_URL }}"
+          AI_EC2_INSTANCE_ID: "${{ secrets.AI_EC2_INSTANCE_ID }}"
         run: |
-          cat > /tmp/app.env << 'ENVEOF'
-          DATABASE_URL=${{ secrets.AI_DATABASE_URL }}
-          REDIS_URL=${{ secrets.AI_REDIS_URL }}
+          cat > /tmp/app.env << ENVEOF
+          DATABASE_URL=$AI_DATABASE_URL
           ENVEOF
           sed -i 's/^ *//' /tmp/app.env
 
-          COMPOSE_B64=$(base64 -w0 < docker-compose.yml)
-          DEPLOY_B64=$(base64 -w0 < scripts/deploy.sh)
-          ROLLBACK_B64=$(base64 -w0 < scripts/rollback.sh)
-          NGINX_B64=$(base64 -w0 < nginx/nginx.conf)
+          cat > /tmp/deploy.sh << 'DEPLOYEOF'
+          #!/bin/bash
+          set -e
+          IMAGE_TAG=$1
+          if [ -z "$IMAGE_TAG" ]; then echo "Usage: deploy.sh <image_tag>"; exit 1; fi
+
+          cd /home/ubuntu
+          CONTAINER_NAME="passroute-ai"
+
+          # 현재 이미지 백업 (롤백용)
+          docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" > .previous_image 2>/dev/null || true
+
+          docker pull "$IMAGE_TAG"
+
+          # 기존 컨테이너 중지 및 제거
+          docker stop "$CONTAINER_NAME" 2>/dev/null || true
+          docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+          # 새 컨테이너 시작
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            --env-file /home/ubuntu/.env \
+            -p 8000:8000 \
+            --restart unless-stopped \
+            "$IMAGE_TAG" \
+            uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+          # 헬스체크 (최대 180초)
+          for i in $(seq 1 36); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "헬스체크 통과"
+              docker image prune -f
+              echo "===== 배포 완료 ====="
+              exit 0
+            fi
+            echo "헬스체크 대기... ($i/36)"
+            sleep 5
+          done
+
+          echo "헬스체크 실패"
+          docker logs --tail=50 "$CONTAINER_NAME"
+          exit 1
+          DEPLOYEOF
+
+          cat > /tmp/rollback.sh << 'ROLLBACKEOF'
+          #!/bin/bash
+          set -e
+          cd /home/ubuntu
+          CONTAINER_NAME="passroute-ai"
+          PREV_IMAGE=$(cat .previous_image 2>/dev/null || true)
+          if [ -z "$PREV_IMAGE" ]; then echo "롤백 불가: 이전 이미지 없음"; exit 1; fi
+
+          docker stop "$CONTAINER_NAME" 2>/dev/null || true
+          docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            --env-file /home/ubuntu/.env \
+            -p 8000:8000 \
+            --restart unless-stopped \
+            "$PREV_IMAGE" \
+            uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+          for i in $(seq 1 24); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "롤백 헬스체크 통과"
+              echo "===== 롤백 완료 ====="
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "롤백 헬스체크 실패"
+          exit 1
+          ROLLBACKEOF
+
           ENV_B64=$(base64 -w0 < /tmp/app.env)
+          DEPLOY_B64=$(base64 -w0 < /tmp/deploy.sh)
+          ROLLBACK_B64=$(base64 -w0 < /tmp/rollback.sh)
 
           jq -n \
-            --arg inst "${{ secrets.AI_EC2_INSTANCE_ID }}" \
-            --arg c1 "echo $COMPOSE_B64 | base64 -d > /home/ubuntu/docker-compose.yml" \
+            --arg inst "$AI_EC2_INSTANCE_ID" \
+            --arg c1 "echo $ENV_B64 | base64 -d > /home/ubuntu/.env" \
             --arg c2 "echo $DEPLOY_B64 | base64 -d > /home/ubuntu/deploy.sh && chmod +x /home/ubuntu/deploy.sh" \
-            --arg c3 "mkdir -p /home/ubuntu/nginx" \
-            --arg c4 "test -f /home/ubuntu/nginx/nginx.conf || echo $NGINX_B64 | base64 -d > /home/ubuntu/nginx/nginx.conf" \
-            --arg c5 "echo $ROLLBACK_B64 | base64 -d > /home/ubuntu/rollback.sh && chmod +x /home/ubuntu/rollback.sh" \
-            --arg c6 "echo $ENV_B64 | base64 -d > /home/ubuntu/.env" \
-            --arg c7 "chown -R ubuntu:ubuntu /home/ubuntu/docker-compose.yml /home/ubuntu/deploy.sh /home/ubuntu/rollback.sh /home/ubuntu/nginx /home/ubuntu/.env" \
+            --arg c3 "echo $ROLLBACK_B64 | base64 -d > /home/ubuntu/rollback.sh && chmod +x /home/ubuntu/rollback.sh" \
+            --arg c4 "chown ubuntu:ubuntu /home/ubuntu/.env /home/ubuntu/deploy.sh /home/ubuntu/rollback.sh" \
             '{
               InstanceIds: [$inst],
               DocumentName: "AWS-RunShellScript",
               Comment: "Sync deploy files",
               TimeoutSeconds: 30,
-              Parameters: { commands: [$c1, $c2, $c3, $c4, $c5, $c6, $c7] }
+              Parameters: { commands: [$c1, $c2, $c3, $c4] }
             }' > /tmp/ssm-sync.json
 
           COMMAND_ID=$(aws ssm send-command \
@@ -126,45 +191,49 @@ jobs:
 
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" || true
+            --instance-id "$AI_EC2_INSTANCE_ID" || true
 
           SYNC_STATUS=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --instance-id "$AI_EC2_INSTANCE_ID" \
             --query 'Status' --output text)
 
           if [ "$SYNC_STATUS" != "Success" ]; then
             echo "::error::배포 파일 동기화 실패: $SYNC_STATUS"
-            echo "--- stdout ---"
             aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
-              --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+              --instance-id "$AI_EC2_INSTANCE_ID" \
               --query 'StandardOutputContent' --output text
-            echo "--- stderr ---"
             aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
-              --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+              --instance-id "$AI_EC2_INSTANCE_ID" \
               --query 'StandardErrorContent' --output text
             exit 1
           fi
 
       - name: Deploy via SSM
+        env:
+          AI_EC2_INSTANCE_ID: "${{ secrets.AI_EC2_INSTANCE_ID }}"
+          DOCKERHUB_USERNAME: "${{ secrets.DOCKERHUB_USERNAME }}"
+          DOCKER_AI_IMAGE_NAME: "${{ secrets.DOCKER_AI_IMAGE_NAME }}"
+          DEPLOY_BRANCH: "${{ needs.build-and-push.outputs.branch }}"
+          DEPLOY_SHA: "${{ needs.build-and-push.outputs.sha }}"
         run: |
+          DEPLOY_IMAGE="$DOCKERHUB_USERNAME/$DOCKER_AI_IMAGE_NAME:$DEPLOY_BRANCH-$DEPLOY_SHA"
+
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --instance-ids "$AI_EC2_INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy passroute-ai (${{ needs.build-and-push.outputs.branch }})" \
+            --comment "Deploy passroute-ai ($DEPLOY_BRANCH)" \
             --timeout-seconds 600 \
-            --parameters 'commands=[
-              "cd /home/ubuntu && bash deploy.sh ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_AI_IMAGE_NAME }}:${{ needs.build-and-push.outputs.branch }}-${{ needs.build-and-push.outputs.sha }}"
-            ]' \
+            --parameters "commands=[\"cd /home/ubuntu && bash deploy.sh $DEPLOY_IMAGE\"]" \
             --query 'Command.CommandId' \
             --output text)
 
           for i in $(seq 1 120); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
-              --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+              --instance-id "$AI_EC2_INSTANCE_ID" \
               --query 'Status' --output text 2>/dev/null || echo "Pending")
 
             if [ "$STATUS" = "Success" ]; then
@@ -172,15 +241,13 @@ jobs:
               break
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ] || [ "$STATUS" = "Cancelled" ]; then
               echo "::error::Deployment failed with status: $STATUS"
-              echo "--- stdout ---"
               aws ssm get-command-invocation \
                 --command-id "$COMMAND_ID" \
-                --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+                --instance-id "$AI_EC2_INSTANCE_ID" \
                 --query 'StandardOutputContent' --output text
-              echo "--- stderr ---"
               aws ssm get-command-invocation \
                 --command-id "$COMMAND_ID" \
-                --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+                --instance-id "$AI_EC2_INSTANCE_ID" \
                 --query 'StandardErrorContent' --output text
               exit 1
             fi
@@ -196,11 +263,13 @@ jobs:
 
       - name: Rollback on deploy failure
         if: failure()
+        env:
+          AI_EC2_INSTANCE_ID: "${{ secrets.AI_EC2_INSTANCE_ID }}"
         run: |
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+            --instance-ids "$AI_EC2_INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Rollback passroute-ai-dev" \
+            --comment "Rollback passroute-ai" \
             --timeout-seconds 300 \
             --parameters 'commands=["cd /home/ubuntu && bash rollback.sh"]' \
             --query 'Command.CommandId' \
@@ -209,7 +278,7 @@ jobs:
           for i in $(seq 1 60); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
-              --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+              --instance-id "$AI_EC2_INSTANCE_ID" \
               --query 'Status' --output text 2>/dev/null || echo "Pending")
 
             if [ "$STATUS" = "Success" ]; then
@@ -217,15 +286,13 @@ jobs:
               break
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ] || [ "$STATUS" = "Cancelled" ]; then
               echo "::error::롤백 실패: $STATUS"
-              echo "--- stdout ---"
               aws ssm get-command-invocation \
                 --command-id "$COMMAND_ID" \
-                --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+                --instance-id "$AI_EC2_INSTANCE_ID" \
                 --query 'StandardOutputContent' --output text
-              echo "--- stderr ---"
               aws ssm get-command-invocation \
                 --command-id "$COMMAND_ID" \
-                --instance-id "${{ secrets.AI_EC2_INSTANCE_ID }}" \
+                --instance-id "$AI_EC2_INSTANCE_ID" \
                 --query 'StandardErrorContent' --output text
               break
             fi
