@@ -1,10 +1,8 @@
 import asyncio
 import json
 import logging
-from typing import TypedDict
 
 from anthropic import APIError, APITimeoutError, AsyncAnthropic
-from langgraph.graph import END, StateGraph
 
 from app.core.config import settings
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
@@ -18,67 +16,56 @@ _client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 # 프롬프트
 # ──────────────────────────────────────────────
 
-ANALYSIS_PROMPT = """\
-당신은 개발자 면접 답변 분석 전문가입니다.
-지원자의 최신 답변(대화 이력의 마지막 답변)을 중점 분석하되, 이전 대화 맥락도 함께 고려하세요.
-
-## 분석 기준
-
-### 1. 답변 품질 평가
-- 구체성: 추상적 설명인가, 실제 경험·수치·사례가 포함되었는가
-- 기술적 깊이: 표면적 언급인가, 동작 원리·내부 구조까지 이해하고 있는가
-- 논리적 완성도: 주장에 대한 근거가 있는가, 논리적 허점이 없는가
-
-### 2. 키워드 추출 (중요)
-답변에서 언급된 기술·도구·개념을 두 분류로 나누어 추출하세요:
-- **tech_keywords**: 답변에서 직접 언급한 구체적 기술/도구/프레임워크 (예: Redis, Kafka, Docker, JPA, Spring Security)
-- **concept_keywords**: 답변에서 언급한 개념/패턴/방법론 (예: 캐싱 전략, 이벤트 드리븐, CI/CD, TDD)
-
-### 3. 심화 가능 포인트 식별
-답변에서 언급했지만 깊이가 부족한 부분을 구체적으로 식별하세요:
-- 기술을 언급했지만 왜 그 기술을 선택했는지 설명하지 않은 경우
-- 결과를 말했지만 과정이나 트레이드오프를 설명하지 않은 경우
-- 개념을 아는 것처럼 말했지만 실제 적용 경험이 드러나지 않은 경우
-
-## 응답 형식
-반드시 아래 JSON 형식으로만 응답하세요.
-{
-  "quality": "sufficient" 또는 "insufficient" 또는 "partial",
-  "tech_keywords": ["Redis", "Docker", ...],
-  "concept_keywords": ["캐싱 전략", "이벤트 드리븐", ...],
-  "deep_dive_targets": [
-    {"keyword": "언급된 기술/개념", "gap": "부족한 부분 설명"}
-  ],
-  "weak_points": ["부족한 부분1", "부족한 부분2", ...],
-  "summary": "답변 분석 요약 (1~2문장)"
-}\
-"""
-
-_BASE_SYSTEM_PROMPT = """\
+_TECHNICAL_SYSTEM_PROMPT = """\
 당신은 실무 경험이 풍부한 시니어 개발자 면접관입니다.
 지원자의 답변에서 언급된 구체적인 기술·개념을 포착하여, 실제 이해도와 실무 역량을 검증하는 날카로운 꼬리 질문을 생성하세요.
 
-## 꼬리 질문 전략 (핵심)
+## 꼬리 질문 전략
 답변에서 포착한 기술 키워드를 기반으로, 아래 전략 중 가장 적합한 것을 선택하세요:
 
 1. **동작 원리 검증**: 기술을 언급했다면, 그 기술의 내부 동작을 이해하는지 확인
    - 예: "Redis를 캐시로 사용했다" → "Redis의 eviction 정책은 어떤 걸 사용하셨고, 그 이유는?"
-   - 예: "JPA를 사용했다" → "N+1 문제가 발생한 적 있나요? 어떻게 해결하셨나요?"
-
 2. **선택 근거 확인**: 특정 기술을 선택한 이유와 대안 비교를 확인
-   - 예: "메시지 큐로 Kafka를 도입했다" → "RabbitMQ 대신 Kafka를 선택한 이유는? 처리량 요구사항이 어느 정도였나요?"
-
+   - 예: "메시지 큐로 Kafka를 도입했다" → "RabbitMQ 대신 Kafka를 선택한 이유는?"
 3. **장애·한계 경험 확인**: 해당 기술 사용 시 겪은 문제와 해결 과정을 확인
-   - 예: "Docker로 배포했다" → "컨테이너 환경에서 겪은 가장 까다로운 문제는? 어떻게 디버깅하셨나요?"
-
+   - 예: "Docker로 배포했다" → "컨테이너 환경에서 겪은 가장 까다로운 문제는?"
 4. **설계 의사결정 검증**: 아키텍처나 설계 선택의 트레이드오프를 확인
-   - 예: "MSA로 전환했다" → "서비스 간 통신은 동기/비동기 중 어떤 방식을 선택했고, 데이터 정합성은 어떻게 보장했나요?"
-
+   - 예: "MSA로 전환했다" → "서비스 간 통신은 동기/비동기 중 어떤 방식을 선택했나요?"
 5. **수치·성과 검증**: 정량적 결과를 주장했다면, 측정 방법과 기준을 확인
-   - 예: "성능을 50% 개선했다" → "그 수치는 어떤 지표로 측정한 건가요? 개선 전후 구체적 수치를 말씀해 주세요"
+   - 예: "성능을 50% 개선했다" → "그 수치는 어떤 지표로 측정한 건가요?"
+
+{difficulty_criteria}
+{context_guidelines}
+{common_rules}\
+"""
+
+_PERSONALITY_SYSTEM_PROMPT = """\
+당신은 채용 면접 경험이 풍부한 인사 담당자입니다.
+지원자의 답변에서 드러나는 가치관, 태도, 협업 방식, 성장 가능성을 심층적으로 파악하는 꼬리 질문을 생성하세요.
+
+## 꼬리 질문 전략
+답변에서 포착한 경험·태도를 기반으로, 아래 전략 중 가장 적합한 것을 선택하세요:
+
+1. **행동 구체화**: 추상적인 태도 언급을 구체적 행동으로 확인
+   - 예: "소통을 잘한다" → "팀원과 의견이 충돌했을 때 실제로 어떻게 해결하셨나요?"
+2. **동기·가치관 확인**: 선택이나 행동 뒤의 동기를 파악
+   - 예: "리더 역할을 맡았다" → "그 역할을 자원한 건가요? 어떤 점이 동기가 되었나요?"
+3. **갈등·실패 경험 탐색**: 어려운 상황에서의 대처 방식을 확인
+   - 예: "프로젝트를 성공적으로 마쳤다" → "과정에서 가장 힘들었던 순간은? 어떻게 극복하셨나요?"
+4. **자기인식 확인**: 본인의 강점·약점에 대한 인식 수준을 파악
+   - 예: "꼼꼼하다" → "꼼꼼함이 오히려 부정적으로 작용한 적은 없었나요?"
+5. **성장·학습 태도 확인**: 경험에서 무엇을 배웠는지 확인
+   - 예: "새로운 기술을 배웠다" → "그 과정에서 가장 어려웠던 점과 극복 방법은?"
+
+{difficulty_criteria}
+{context_guidelines}
+{common_rules}\
+"""
+
+_COMMON_RULES = """\
 
 ## 꼬리 질문을 생성해야 하는 경우
-- 답변에서 기술·도구를 언급했지만 표면적 수준에 머문 경우
+- 답변이 표면적이거나 추상적인 수준에 머문 경우
 - 결과만 말하고 과정·근거·트레이드오프 설명이 빠진 경우
 - 이력서에 적힌 경험과 답변 사이에 괴리가 있는 경우
 - 답변에 논리적 허점이나 모순이 있는 경우
@@ -90,23 +77,8 @@ _BASE_SYSTEM_PROMPT = """\
 
 ## 중복 방지 지침 (필수)
 - 대화 이력에 이미 등장한 질문과 동일하거나 유사한 질문을 절대 반복하지 마세요
-- "구체적으로 설명해 주세요", "자세히 말씀해 주세요" 같은 포괄적 요청 대신, 특정 기술·상황을 지목하여 질문하세요
-- 이전 답변에서 이미 충분히 다룬 내용을 다시 묻지 마세요
-- 꼬리 질문은 반드시 최신 답변에서 새롭게 드러난 기술·경험·키워드를 타겟으로 해야 합니다
-
-## 난이도별 판단 기준
-{difficulty_criteria}
-
-## 이력서 활용 지침
-- 이력서 정보가 제공되면, 지원자가 실제로 경험했다고 주장하는 내용과 답변을 대조하세요
-- 이력서에 관련 경험이 있는데 답변에서 언급하지 않았다면, 해당 경험을 끌어내는 꼬리 질문을 생성하세요
-- 이력서 정보가 없더라도 답변 자체의 품질만으로 판단하세요
-
-## 업계 참고 자료 활용 지침
-- 채용공고, 기술블로그, 뉴스 등의 참고 자료가 제공되면, 업계에서 실제로 요구하는 역량과 답변을 대조하세요
-- 채용공고에서 요구하는 기술을 답변에서 언급했지만 깊이가 부족하면, 해당 기술의 실무 적용 경험을 묻는 꼬리 질문을 생성하세요
-- 기술블로그의 트렌드와 관련된 답변이라면, 최신 동향에 대한 이해도를 확인하는 꼬리 질문을 생성하세요
-- 참고 자료가 없더라도 답변 자체의 품질만으로 판단하세요
+- "구체적으로 설명해 주세요" 같은 포괄적 요청 대신, 특정 기술·상황을 지목하여 질문하세요
+- 꼬리 질문은 반드시 최신 답변에서 새롭게 드러난 내용을 타겟으로 해야 합니다
 
 ## 응답 형식
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 포함하지 마세요.
@@ -114,23 +86,35 @@ _BASE_SYSTEM_PROMPT = """\
   "has_follow_up": true 또는 false,
   "follow_up_question": "꼬리 질문 텍스트" 또는 null,
   "reason": "판단 근거"
-}}\
-"""
+}}"""
+
+_CONTEXT_GUIDELINES = """\
+
+## 이력서 활용 지침
+- 이력서 정보가 제공되면, 지원자가 실제로 경험했다고 주장하는 내용과 답변을 대조하세요
+- 이력서에 관련 경험이 있는데 답변에서 언급하지 않았다면, 해당 경험을 끌어내는 꼬리 질문을 생성하세요
+
+## 업계 참고 자료 활용 지침
+- 채용공고, 기술블로그, 뉴스 등의 참고 자료가 제공되면, 업계에서 실제로 요구하는 역량과 답변을 대조하세요
+- 참고 자료가 없더라도 답변 자체의 품질만으로 판단하세요"""
 
 DIFFICULTY_CRITERIA = {
     "low": (
+        "\n## 난이도별 판단 기준\n"
         "현재 난이도: 하 (관대한 평가)\n"
         "답변이 질문의 핵심 개념을 포함하고 있다면 추가 질문이 필요하지 않습니다.\n"
         "기본적인 이해를 확인하는 수준으로 판단하세요.\n"
         "구체적 사례나 경험이 없어도, 핵심 개념만 언급했다면 충분합니다."
     ),
     "middle": (
+        "\n## 난이도별 판단 기준\n"
         "현재 난이도: 중 (보통 평가)\n"
         "답변에 개념 설명과 함께 구체적인 경험이나 사례가 포함되어야 합니다.\n"
         "경험이나 사례가 빠져 있다면 이를 확인하는 꼬리질문을 생성하세요.\n"
         "개념만 나열한 답변은 부족하며, 적용 경험까지 확인해야 합니다."
     ),
     "high": (
+        "\n## 난이도별 판단 기준\n"
         "현재 난이도: 상 (엄격한 평가)\n"
         "답변에 깊은 이해, 트레이드오프 분석, 대안 제시가 포함되어야 합니다.\n"
         "표면적이거나 암기식 답변이라면 반드시 꼬리질문을 생성하세요.\n"
@@ -138,12 +122,6 @@ DIFFICULTY_CRITERIA = {
         "왜 그 선택을 했는지, 다른 대안은 무엇이었는지까지 확인하세요."
     ),
 }
-
-
-def _build_system_prompt(difficulty: str) -> str:
-    """난이도에 맞는 시스템 프롬프트를 구성한다."""
-    criteria = DIFFICULTY_CRITERIA[difficulty]
-    return _BASE_SYSTEM_PROMPT.format(difficulty_criteria=criteria)
 
 DIFFICULTY_LABELS = {
     "low": "하",
@@ -156,30 +134,33 @@ INTERVIEW_TYPE_LABELS = {
     "personality": "인성 면접",
 }
 
-
-# ──────────────────────────────────────────────
-# LangGraph 상태 정의
-# ──────────────────────────────────────────────
-
-class FollowUpState(TypedDict):
-    request: FollowUpRequest
-    user_message: str
-    analysis: dict
-    resume_context: str
-    crawled_context: str
-    response: FollowUpResponse
+# 면접 유형별 검색할 크롤링 데이터 source
+_SOURCE_FILTER: dict[str, list[str]] = {
+    "technical": ["tech_blog", "jobkorea"],
+    "personality": ["jobkorea"],
+}
 
 
 # ──────────────────────────────────────────────
-# 유틸리티
+# 프롬프트 빌더
 # ──────────────────────────────────────────────
 
-async def _noop() -> str:
-    return ""
+def _build_system_prompt(interview_type: str, difficulty: str) -> str:
+    """면접 유형과 난이도에 맞는 시스템 프롬프트를 구성한다."""
+    template = (
+        _TECHNICAL_SYSTEM_PROMPT
+        if interview_type == "technical"
+        else _PERSONALITY_SYSTEM_PROMPT
+    )
+    return template.format(
+        difficulty_criteria=DIFFICULTY_CRITERIA[difficulty],
+        context_guidelines=_CONTEXT_GUIDELINES,
+        common_rules=_COMMON_RULES,
+    )
 
 
-def _build_conversation_text(request: FollowUpRequest) -> str:
-    """대화 이력을 텍스트로 구성한다."""
+def _build_user_message(request: FollowUpRequest, resume_context: str, crawled_context: str) -> str:
+    """대화 이력 + 컨텍스트를 결합한 user 메시지를 구성한다."""
     interview_type = INTERVIEW_TYPE_LABELS[request.interview_type]
     difficulty = DIFFICULTY_LABELS[request.difficulty]
 
@@ -199,77 +180,60 @@ def _build_conversation_text(request: FollowUpRequest) -> str:
         for q in asked:
             parts.append(f"- {q}")
 
+    if resume_context:
+        parts.append(f"\n[지원자 이력서 관련 정보]\n{resume_context}")
+
+    if crawled_context:
+        parts.append(f"\n[업계 참고 자료 (채용공고/기술블로그/뉴스)]\n{crawled_context}")
+
     return "\n".join(parts)
 
 
 # ──────────────────────────────────────────────
-# 노드 1: 답변 분석 (LLM 호출)
+# 컨텍스트 검색
 # ──────────────────────────────────────────────
 
-async def analyze_answer(state: FollowUpState) -> dict:
-    """답변 품질을 분석하고 핵심 키워드를 추출한다."""
-    user_message = state["user_message"]
-
-    try:
-        response = await _client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=512,
-            temperature=0.3,
-            system=ANALYSIS_PROMPT,
-            messages=[
-                {"role": "user", "content": user_message},
-            ],
-        )
-        content = response.content[0].text
-        if not content:
-            raise ValueError("Empty response content")
-        analysis = json.loads(content.strip())
-        if not isinstance(analysis, dict):
-            raise ValueError("Response is not a JSON object")
-    except (APITimeoutError, APIError, json.JSONDecodeError, KeyError, IndexError, AttributeError, ValueError) as e:
-        logger.warning("답변 분석 실패, 기본값 사용: %s", e)
-        analysis = {
-            "quality": "partial",
-            "keywords": [],
-            "weak_points": [],
-            "summary": "분석 불가",
-        }
-
-    return {"analysis": analysis}
+def _format_crawled_data(crawled_data: dict[str, str]) -> str:
+    """백엔드가 전달한 crawled_data를 프롬프트용 텍스트로 변환한다."""
+    source_labels = {
+        "tech_blog": "기술블로그",
+        "jd": "채용공고",
+        "news": "뉴스",
+    }
+    parts = []
+    for key, text in crawled_data.items():
+        if text and text.strip():
+            label = source_labels.get(key, key)
+            parts.append(f"[{label}]\n{text.strip()}")
+    return "\n\n".join(parts)
 
 
-# ──────────────────────────────────────────────
-# 노드 2: PostgreSQL(pgvector) 검색 (이력서 + 크롤링 데이터)
-# ──────────────────────────────────────────────
-
-# 면접 유형별 검색할 크롤링 데이터 source
-_SOURCE_FILTER: dict[str, list[str]] = {
-    "technical": ["tech_blog", "jobkorea"],
-    "personality": ["jobkorea"],
-}
+async def _noop() -> str:
+    return ""
 
 
-async def search_context(state: FollowUpState) -> dict:
-    """이력서와 크롤링 데이터를 PostgreSQL(pgvector)에서 병렬 검색한다."""
-    request = state["request"]
-    analysis = state["analysis"]
+async def _search_context(request: FollowUpRequest) -> tuple[str, str]:
+    """이력서와 크롤링 데이터를 병렬 검색한다."""
+    last_answer = request.conversation[-1].answer
+    search_query = last_answer[:500].strip()
 
-    keywords = (
-        analysis.get("tech_keywords", [])
-        + analysis.get("concept_keywords", [])
-    )
-    if not keywords:
-        return {"resume_context": "", "crawled_context": ""}
-
-    search_query = " ".join(keywords)
-    sources = _SOURCE_FILTER.get(request.interview_type, ["jobkorea"])
-
-    # 이력서 + 크롤링 데이터 병렬 검색
+    # 이력서 검색
     resume_task = (
         query_resume(request.user_id, search_query)
         if request.user_id
         else _noop()
     )
+
+    # 크롤링 데이터: 백엔드가 직접 전달했으면 사용, 아니면 pgvector 검색
+    if request.crawled_data:
+        crawled_context = _format_crawled_data(request.crawled_data)
+        resume_context = await resume_task
+        if isinstance(resume_context, Exception):
+            logger.warning("이력서 검색 실패: %s", resume_context)
+            resume_context = ""
+        return resume_context, crawled_context
+
+    sources = _SOURCE_FILTER.get(request.interview_type, ["jobkorea"])
     crawled_task = query_crawled_data(search_query, sources)
 
     results = await asyncio.gather(resume_task, crawled_task, return_exceptions=True)
@@ -282,55 +246,23 @@ async def search_context(state: FollowUpState) -> dict:
     if isinstance(results[1], Exception):
         logger.warning("크롤링 데이터 검색 실패: %s", results[1])
 
-    return {"resume_context": resume_context, "crawled_context": crawled_context}
+    return resume_context, crawled_context
 
 
 # ──────────────────────────────────────────────
-# 노드 3: 꼬리 질문 생성 (LLM 호출)
+# 외부 인터페이스
 # ──────────────────────────────────────────────
 
-async def generate_question(state: FollowUpState) -> dict:
-    """답변 분석 결과, 이력서, 크롤링 데이터를 결합하여 꼬리 질문을 생성한다."""
-    user_message = state["user_message"]
-    analysis = state["analysis"]
-    resume_context = state["resume_context"]
-    crawled_context = state["crawled_context"]
+async def generate_follow_up(request: FollowUpRequest) -> FollowUpResponse:
+    """꼬리 질문을 생성한다.
 
-    enriched_parts = [user_message]
+    1단계: 이력서 + 크롤링 데이터 검색 (pgvector / 백엔드 직접 전달)
+    2단계: 단일 LLM 호출 (대화이력 + 컨텍스트 → 꼬리질문 생성)
+    """
+    resume_context, crawled_context = await _search_context(request)
 
-    tech_kw = ", ".join(analysis.get("tech_keywords", [])) or "없음"
-    concept_kw = ", ".join(analysis.get("concept_keywords", [])) or "없음"
-
-    deep_dive_lines = []
-    for target in analysis.get("deep_dive_targets", []):
-        deep_dive_lines.append(
-            f"  - {target.get('keyword', '?')}: {target.get('gap', '?')}"
-        )
-    deep_dive_text = "\n".join(deep_dive_lines) if deep_dive_lines else "  없음"
-
-    enriched_parts.append(
-        f"\n[답변 분석 결과]\n"
-        f"품질: {analysis.get('quality', '알 수 없음')}\n"
-        f"언급된 기술/도구: {tech_kw}\n"
-        f"언급된 개념/패턴: {concept_kw}\n"
-        f"심화 가능 포인트:\n{deep_dive_text}\n"
-        f"부족한 부분: {', '.join(analysis.get('weak_points', []))}\n"
-        f"요약: {analysis.get('summary', '')}"
-    )
-
-    if resume_context:
-        enriched_parts.append(
-            f"\n[지원자 이력서 관련 정보]\n{resume_context}"
-        )
-
-    if crawled_context:
-        enriched_parts.append(
-            f"\n[업계 참고 자료 (채용공고/기술블로그/뉴스)]\n{crawled_context}"
-        )
-
-    enriched_message = "\n".join(enriched_parts)
-
-    system_prompt = _build_system_prompt(state["request"].difficulty)
+    system_prompt = _build_system_prompt(request.interview_type, request.difficulty)
+    user_message = _build_user_message(request, resume_context, crawled_context)
 
     try:
         response = await _client.messages.create(
@@ -339,78 +271,30 @@ async def generate_question(state: FollowUpState) -> dict:
             temperature=0.7,
             system=system_prompt,
             messages=[
-                {"role": "user", "content": enriched_message},
+                {"role": "user", "content": user_message},
             ],
         )
         content = response.content[0].text
         if not content:
             raise ValueError("Empty response content")
         parsed = json.loads(content.strip())
-        result = FollowUpResponse(
+        return FollowUpResponse(
             has_follow_up=parsed["has_follow_up"],
             follow_up_question=parsed.get("follow_up_question"),
             reason=parsed.get("reason"),
         )
     except APITimeoutError:
         logger.error("꼬리 질문 생성 타임아웃")
-        result = FollowUpResponse(
+        return FollowUpResponse(
             has_follow_up=False, reason="AI 서비스 응답 시간 초과"
         )
     except APIError as e:
         logger.error("꼬리 질문 생성 API 오류: %s", e)
-        result = FollowUpResponse(
+        return FollowUpResponse(
             has_follow_up=False, reason="AI 서비스 호출 실패"
         )
     except (json.JSONDecodeError, KeyError, TypeError, IndexError, AttributeError, ValueError) as e:
         logger.error("꼬리 질문 응답 파싱 실패: %s", e)
-        result = FollowUpResponse(
+        return FollowUpResponse(
             has_follow_up=False, reason="AI 응답 파싱 실패"
         )
-
-    return {"response": result}
-
-
-# ──────────────────────────────────────────────
-# LangGraph 워크플로우 구성
-# ──────────────────────────────────────────────
-
-def _build_graph() -> StateGraph:
-    graph = StateGraph(FollowUpState)
-
-    graph.add_node("analyze", analyze_answer)
-    graph.add_node("search", search_context)
-    graph.add_node("generate", generate_question)
-
-    graph.set_entry_point("analyze")
-    graph.add_edge("analyze", "search")
-    graph.add_edge("search", "generate")
-    graph.add_edge("generate", END)
-
-    return graph.compile()
-
-
-_workflow = _build_graph()
-
-
-# ──────────────────────────────────────────────
-# 외부 인터페이스
-# ──────────────────────────────────────────────
-
-async def generate_follow_up(request: FollowUpRequest) -> FollowUpResponse:
-    """LangGraph 워크플로우를 실행하여 꼬리 질문을 생성한다.
-
-    1단계: 답변 품질 분석 + 키워드 추출 (LLM)
-    2단계: PostgreSQL(pgvector)에서 이력서 + 크롤링 데이터(채용공고/기술블로그) 병렬 검색
-    3단계: 분석 결과 + 이력서 + 크롤링 데이터를 결합하여 꼬리 질문 생성 (LLM)
-    """
-    initial_state: FollowUpState = {
-        "request": request,
-        "user_message": _build_conversation_text(request),
-        "analysis": {},
-        "resume_context": "",
-        "crawled_context": "",
-        "response": FollowUpResponse(has_follow_up=False),
-    }
-
-    result = await _workflow.ainvoke(initial_state)
-    return result["response"]
