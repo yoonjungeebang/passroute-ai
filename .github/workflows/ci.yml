@@ -39,7 +39,6 @@ jobs:
         env:
           TESTING: "true"
           DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
-          REDIS_URL: "redis://localhost:6379"
 
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
