@@ -1,7 +1,4 @@
-import pytest
-
 from app.services.debate_llm_service import (
-    _DEBATE_WEIGHTS,
     _ROUND_ACTIVE_FIELDS,
     _fill_template,
     _format_history,
@@ -99,12 +96,11 @@ class TestRenormalizeAndScore:
             "consistency": {"score": 3, "feedback": "보통"},
             "attitude": {"score": 5, "feedback": "좋음"},
         }
-        scores, weighted = _renormalize_and_score(raw_scores, "CLOSING")
+        scores, _weighted = _renormalize_and_score(raw_scores, "CLOSING")
         assert scores.rebuttal_quality is None
 
     def test_weights_sum_to_one(self):
         for round_type, active in _ROUND_ACTIVE_FIELDS.items():
-            total = sum(_DEBATE_WEIGHTS[f] for f in active)
             raw_scores = {f: {"score": 3, "feedback": "test"} for f in active}
             scores, _ = _renormalize_and_score(raw_scores, round_type)
             weight_sum = 0.0
