@@ -22,6 +22,7 @@ class FollowUpRequest(BaseModel):
     difficulty: Literal["low", "middle", "high"]
     conversation: list[QATurn] = Field(min_length=1)
     user_id: str | int | None = None
+    crawled_data: dict[str, str] | None = None
 
     @field_validator("user_id", mode="before")
     @classmethod

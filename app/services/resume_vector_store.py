@@ -91,9 +91,10 @@ async def query_crawled_data(search_query: str, sources: list[str], n_results: i
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             text(
-                f"SELECT content, source, title "
+                f"SELECT document, source, title "
                 f"FROM job_descriptions "
                 f"WHERE source IN ({source_placeholders}) "
+                f"AND embedding IS NOT NULL "
                 f"ORDER BY embedding <=> :embedding::vector "
                 f"LIMIT :limit"
             ),
@@ -117,7 +118,7 @@ async def query_crawled_data(search_query: str, sources: list[str], n_results: i
     for row in rows:
         label = source_labels.get(row.source, row.source)
         title = row.title or ""
-        parts.append(f"- [{label}] {title}: {row.content[:300]}")
+        parts.append(f"- [{label}] {title}: {row.document[:300]}")
 
     return "\n".join(parts)
 

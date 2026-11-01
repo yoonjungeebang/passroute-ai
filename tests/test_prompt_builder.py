@@ -82,15 +82,15 @@ class TestFormatGuideline:
 
 class TestResolveCrawledSources:
     def test_debate_format(self):
-        sources, label = _resolve_crawled_sources("TECHNICAL", "DEBATE")
+        sources, _label = _resolve_crawled_sources("TECHNICAL", "DEBATE")
         assert "naver_news" in sources
 
     def test_technical_type(self):
-        sources, label = _resolve_crawled_sources("TECHNICAL", "ONE_ON_ONE")
+        sources, _label = _resolve_crawled_sources("TECHNICAL", "ONE_ON_ONE")
         assert "tech_blog" in sources
 
     def test_personality_type(self):
-        sources, label = _resolve_crawled_sources("PERSONALITY", "ONE_ON_ONE")
+        sources, _label = _resolve_crawled_sources("PERSONALITY", "ONE_ON_ONE")
         assert "jobkorea" in sources
 
 

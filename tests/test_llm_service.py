@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.schemas.evaluation import LLMScores, ScoreItem
@@ -25,7 +27,7 @@ class TestParseJson:
         assert result == {"a": 1}
 
     def test_invalid_json_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(json.JSONDecodeError):
             _parse_json("not json")
 
     def test_nested_json(self):

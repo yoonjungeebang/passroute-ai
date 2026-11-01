@@ -13,6 +13,7 @@ class QuestionGenerateRequest(BaseModel):
     cover_letter: str
     resume: str | None = None
     portfolio: str | None = None
+    crawled_data: dict[str, str] | None = None
     question_count: int = Field(default=5, ge=1, le=20)
 
 

@@ -108,3 +108,9 @@ class ResumeProcessResponse(BaseModel):
     overseas_experience: list[OverseasExperienceSchema] = []
     disability: DisabilitySchema | None = None
     driving_license: str | None = None
+
+
+class DocumentStoreRequest(BaseModel):
+    user_id: str
+    text: str
+    doc_type: str = "resume"

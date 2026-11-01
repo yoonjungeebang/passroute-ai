@@ -233,22 +233,43 @@ def build_prompt(
 # OpenAI 호출 + 응답 파싱
 # ──────────────────────────────────────────────
 
+def _format_crawled_data(crawled_data: dict[str, str]) -> tuple[str, str]:
+    """백엔드가 전달한 crawled_data를 프롬프트용 텍스트로 변환한다."""
+    source_labels = {
+        "tech_blog": "기술블로그",
+        "jd": "채용공고",
+        "news": "뉴스",
+    }
+    parts = []
+    label_parts = []
+    for key, text in crawled_data.items():
+        if text and text.strip():
+            label = source_labels.get(key, key)
+            label_parts.append(label)
+            parts.append(f"[{label}]\n{text.strip()}")
+
+    context = "\n\n".join(parts)
+    label = "참고 업계 자료 (" + "/".join(label_parts) + ")" if label_parts else "참고 업계 자료"
+    return context, label
+
+
 async def generate_questions(
     request: QuestionGenerateRequest,
 ) -> QuestionGenerateResponse:
-    sources, crawled_label = _resolve_crawled_sources(
-        request.interview_type, request.interview_format,
-    )
-
-    search_query = request.cover_letter[:500].strip()
-    if request.resume:
-        search_query = (search_query + " " + request.resume[:300]).strip()
-
-    try:
-        crawled_context = await query_crawled_data(search_query, sources)
-    except Exception as e:
-        logger.warning("크롤링 데이터 검색 실패: %s", e)
-        crawled_context = ""
+    if request.crawled_data:
+        crawled_context, crawled_label = _format_crawled_data(request.crawled_data)
+    else:
+        sources, crawled_label = _resolve_crawled_sources(
+            request.interview_type, request.interview_format,
+        )
+        search_query = request.cover_letter[:500].strip()
+        if request.resume:
+            search_query = (search_query + " " + request.resume[:300]).strip()
+        try:
+            crawled_context = await query_crawled_data(search_query, sources)
+        except Exception as e:
+            logger.warning("크롤링 데이터 검색 실패: %s", e)
+            crawled_context = ""
 
     system_prompt = build_prompt(
         persona=request.persona,
