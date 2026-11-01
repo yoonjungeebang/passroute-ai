@@ -4,6 +4,7 @@ import logging
 from openai import APIError, APITimeoutError, AsyncOpenAI
 
 from app.core.config import settings
+from app.core.sources import BLOG_SOURCES, JD_SOURCES, NEWS_SOURCES
 from app.schemas.prompt_builder import (
     GeneratedQuestion,
     QuestionGenerateRequest,
@@ -151,9 +152,9 @@ def _format_guideline(interview_format: str) -> str:
 
 
 _SOURCE_MAP: dict[str, dict[str, list[str]]] = {
-    "DEBATE": {"sources": ["naver_news"], "label": "참고 뉴스 데이터"},
-    "TECHNICAL": {"sources": ["tech_blog_webkr", "jumpit", "programmers", "rallit"], "label": "참고 업계 자료 (기술블로그/채용공고)"},
-    "PERSONALITY": {"sources": ["jumpit", "programmers", "rallit"], "label": "참고 채용공고 데이터"},
+    "DEBATE": {"sources": NEWS_SOURCES, "label": "참고 뉴스 데이터"},
+    "TECHNICAL": {"sources": BLOG_SOURCES + JD_SOURCES, "label": "참고 업계 자료 (기술블로그/채용공고)"},
+    "PERSONALITY": {"sources": JD_SOURCES, "label": "참고 채용공고 데이터"},
 }
 
 
