@@ -87,11 +87,11 @@ class TestResolveCrawledSources:
 
     def test_technical_type(self):
         sources, _label = _resolve_crawled_sources("TECHNICAL", "ONE_ON_ONE")
-        assert "tech_blog" in sources
+        assert "tech_blog_webkr" in sources
 
     def test_personality_type(self):
         sources, _label = _resolve_crawled_sources("PERSONALITY", "ONE_ON_ONE")
-        assert "jobkorea" in sources
+        assert "jumpit" in sources
 
 
 class TestBuildPrompt:

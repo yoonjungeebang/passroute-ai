@@ -2,6 +2,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sqlalchemy import text
 
 from app.core.database import AsyncSessionLocal
+from app.core.sources import SOURCE_LABELS
 from app.services.embedder import get_embedder
 
 _embedder = None
@@ -109,11 +110,7 @@ async def query_crawled_data(search_query: str, sources: list[str], n_results: i
     if not rows:
         return ""
 
-    source_labels = {
-        "tech_blog": "기술블로그",
-        "jobkorea": "채용공고",
-        "naver_news": "뉴스",
-    }
+    source_labels = SOURCE_LABELS
     parts = []
     for row in rows:
         label = source_labels.get(row.source, row.source)
