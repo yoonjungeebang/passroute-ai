@@ -105,9 +105,16 @@ jobs:
 
           docker pull "$IMAGE_TAG"
 
-          # 기존 컨테이너 중지 및 제거
+          # 기존 컨테이너 중지 및 제거 (이름 기반 + 포트 기반)
           docker stop "$CONTAINER_NAME" 2>/dev/null || true
           docker rm "$CONTAINER_NAME" 2>/dev/null || true
+          # 이름이 다른 컨테이너가 8000 포트를 점유하고 있을 수 있음
+          PORT_CONTAINER=$(docker ps -q --filter "publish=8000")
+          if [ -n "$PORT_CONTAINER" ]; then
+            echo "포트 8000 점유 컨테이너 발견: $PORT_CONTAINER"
+            docker stop "$PORT_CONTAINER" 2>/dev/null || true
+            docker rm "$PORT_CONTAINER" 2>/dev/null || true
+          fi
 
           # 새 컨테이너 시작
           docker run -d \
