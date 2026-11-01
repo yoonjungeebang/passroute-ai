@@ -110,8 +110,10 @@ async def query_crawled_data(search_query: str, sources: list[str], n_results: i
         return ""
 
     source_labels = {
-        "tech_blog": "기술블로그",
-        "jobkorea": "채용공고",
+        "tech_blog_webkr": "기술블로그",
+        "jumpit": "채용공고",
+        "programmers": "채용공고",
+        "rallit": "채용공고",
         "naver_news": "뉴스",
     }
     parts = []

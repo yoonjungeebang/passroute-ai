@@ -152,8 +152,8 @@ def _format_guideline(interview_format: str) -> str:
 
 _SOURCE_MAP: dict[str, dict[str, list[str]]] = {
     "DEBATE": {"sources": ["naver_news"], "label": "참고 뉴스 데이터"},
-    "TECHNICAL": {"sources": ["tech_blog", "jobkorea"], "label": "참고 업계 자료 (기술블로그/채용공고)"},
-    "PERSONALITY": {"sources": ["jobkorea"], "label": "참고 채용공고 데이터"},
+    "TECHNICAL": {"sources": ["tech_blog_webkr", "jumpit", "programmers", "rallit"], "label": "참고 업계 자료 (기술블로그/채용공고)"},
+    "PERSONALITY": {"sources": ["jumpit", "programmers", "rallit"], "label": "참고 채용공고 데이터"},
 }
 
 

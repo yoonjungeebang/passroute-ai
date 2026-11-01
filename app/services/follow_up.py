@@ -136,8 +136,8 @@ INTERVIEW_TYPE_LABELS = {
 
 # 면접 유형별 검색할 크롤링 데이터 source
 _SOURCE_FILTER: dict[str, list[str]] = {
-    "technical": ["tech_blog", "jobkorea"],
-    "personality": ["jobkorea"],
+    "technical": ["tech_blog_webkr", "jumpit", "programmers", "rallit"],
+    "personality": ["jumpit", "programmers", "rallit"],
 }
 
 
@@ -233,7 +233,7 @@ async def _search_context(request: FollowUpRequest) -> tuple[str, str]:
             resume_context = ""
         return resume_context, crawled_context
 
-    sources = _SOURCE_FILTER.get(request.interview_type, ["jobkorea"])
+    sources = _SOURCE_FILTER.get(request.interview_type, ["jumpit", "programmers", "rallit"])
     crawled_task = query_crawled_data(search_query, sources)
 
     results = await asyncio.gather(resume_task, crawled_task, return_exceptions=True)
