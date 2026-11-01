@@ -34,23 +34,7 @@ async def lifespan(app: FastAPI):
             CREATE INDEX IF NOT EXISTS idx_resume_chunks_vec
             ON resume_chunks USING hnsw (embedding vector_cosine_ops)
         """))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS job_descriptions (
-                id          TEXT PRIMARY KEY,
-                source      TEXT NOT NULL,
-                title       TEXT,
-                content     TEXT NOT NULL,
-                embedding   vector(768) NOT NULL
-            )
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_job_desc_source
-            ON job_descriptions (source)
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_job_desc_vec
-            ON job_descriptions USING hnsw (embedding vector_cosine_ops)
-        """))
+        # job_descriptions 테이블은 크롤러가 생성·관리하므로 AI 서버에서 생성하지 않음
     app.state.embedder = get_embedder()
     yield
     await close_http_client()
