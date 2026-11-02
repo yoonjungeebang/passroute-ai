@@ -9,15 +9,24 @@ from app.schemas.debate import (
     DebateRebuttalResponse,
     InterviewerClosingRequest,
     InterviewerClosingResponse,
+    InterviewerCueRequest,
+    InterviewerCueResponse,
     InterviewerOpeningRequest,
     InterviewerOpeningResponse,
+    TopicDetailRequest,
+    TopicDetailResponse,
+    TopicSuggestRequest,
+    TopicSuggestResponse,
 )
 from app.services.debate_llm_service import (
     generate_competitor_closing,
     generate_competitor_opening,
     generate_competitor_rebuttal,
     generate_interviewer_closing,
+    generate_interviewer_cue,
     generate_interviewer_opening,
+    generate_topic_detail,
+    suggest_debate_topics,
 )
 
 router = APIRouter(tags=["debate"])
@@ -46,3 +55,18 @@ async def competitor_closing_endpoint(req: DebateClosingRequest) -> DebateClosin
 @router.post("/debate/interviewer-closing", response_model=InterviewerClosingResponse)
 async def interviewer_closing_endpoint(req: InterviewerClosingRequest) -> InterviewerClosingResponse:
     return await generate_interviewer_closing(req)
+
+
+@router.post("/debate/interviewer-cue", response_model=InterviewerCueResponse)
+async def interviewer_cue_endpoint(req: InterviewerCueRequest) -> InterviewerCueResponse:
+    return await generate_interviewer_cue(req)
+
+
+@router.post("/debate/topics/suggest", response_model=TopicSuggestResponse)
+async def topic_suggest_endpoint(req: TopicSuggestRequest) -> TopicSuggestResponse:
+    return await suggest_debate_topics(req)
+
+
+@router.post("/debate/topics/detail", response_model=TopicDetailResponse)
+async def topic_detail_endpoint(req: TopicDetailRequest) -> TopicDetailResponse:
+    return await generate_topic_detail(req)
