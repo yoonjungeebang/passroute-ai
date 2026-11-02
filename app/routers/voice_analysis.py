@@ -8,8 +8,10 @@ from app.models.voice_analysis import VoiceAnalysis
 router = APIRouter(tags=["평가"])
 
 
-@router.post("/interview/{session_id}/end")
+@router.post("/interview/{session_id}/end",
+              summary="면접 종료 후 음성 분석 집계")
 async def end_interview(session_id: str, db: AsyncSession = Depends(get_db)):
+    """세션 전체의 평균 WPM, 평균 침묵 시간, 총 필러워드 수를 집계하여 반환한다."""
     result = await db.execute(
         select(
             func.avg(VoiceAnalysis.avg_wpm).label("avg_wpm"),

@@ -6,7 +6,8 @@ from app.services.prompt_builder import generate_questions
 router = APIRouter(prefix="/api/questions", tags=["질문 생성"])
 
 
-@router.post("/generate", response_model=QuestionGenerateResponse)
+@router.post("/generate", response_model=QuestionGenerateResponse,
+              summary="면접 질문 생성")
 async def generate(body: QuestionGenerateRequest) -> QuestionGenerateResponse:
     """페르소나·슬라이더 설정을 바탕으로 면접 질문을 생성한다."""
     try:

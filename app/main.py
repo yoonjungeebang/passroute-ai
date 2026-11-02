@@ -71,6 +71,55 @@ tags_metadata = [
 
 app = FastAPI(
     title="PassRoute AI server",
+    description="""
+## WebSocket 엔드포인트
+
+프론트엔드에서 AI 서버로 직접 연결하는 WebSocket 엔드포인트입니다.
+Swagger UI에서는 테스트할 수 없으며, WebSocket 클라이언트를 사용해야 합니다.
+
+---
+
+### 1. `WS /ws/stt/{session_id}/{question_id}` — 일반 면접 실시간 STT
+
+- **path params**: `session_id` (숫자), `question_id` (숫자) — 숫자가 아니면 `1008` 코드로 즉시 종료
+- **클라이언트 → 서버**: PCM int16 바이너리 오디오 청크 (16kHz, mono)
+- **서버 → 클라이언트** (JSON):
+
+| status | 설명 | 주요 필드 |
+|--------|------|----------|
+| `completed` | STT 인식 결과 | `text`, `session_id`, `question_id`, `wpm` (float), `filler_count` (int) |
+| `silence` | 침묵 감지 중 | `silence_sec` (float) |
+| `feedback` | 실시간 피드백 | `type` (`wpm_slow` · `wpm_fast` · `filler` · `silence`), `message` |
+| `error` | 처리 오류 | `message` |
+
+---
+
+### 2. `WS /ws/stt/debate/{session_id}/{round_type}` — 토론 면접 실시간 STT
+
+- **path params**: `session_id` (숫자), `round_type` (`OPENING` · `REBUTTAL_1` · `REBUTTAL_2` · `CLOSING`, 대소문자 무관) — 유효하지 않으면 `1008` 코드로 즉시 종료
+- **클라이언트 → 서버**: PCM int16 바이너리 오디오 청크 (16kHz, mono)
+- **서버 → 클라이언트** (JSON):
+
+| status | 설명 | 주요 필드 |
+|--------|------|----------|
+| `completed` | STT 인식 결과 | `text`, `session_id`, `round` (str), `wpm` (float), `filler_count` (int) |
+| `silence` | 침묵 감지 중 | `silence_sec` (float) |
+| `feedback` | 실시간 피드백 | `type` (`wpm_slow` · `wpm_fast` · `filler` · `silence`), `message` |
+| `error` | 처리 오류 | `message` |
+
+---
+
+### 3. `WS /ws/face/{session_id}/{question_id}` — 실시간 표정 분석
+
+- **path params**: `session_id` (str), `question_id` (str)
+- **클라이언트 → 서버**: base64 인코딩된 이미지 (텍스트 프레임, data URI 접두사 허용)
+- **서버 → 클라이언트** (JSON):
+
+| status | 설명 | 주요 필드 |
+|--------|------|----------|
+| `face_data` | 프레임 분석 결과 | `face_detected` (bool), `gaze_on` (bool), `gaze_ratio` (float, %), `blink_in_window` (int), `ear` (float) |
+| `feedback` | 실시간 피드백 | `type` (`gaze_off` · `gaze_low` · `blink_high`), `message` |
+""",
     version="1.0.0",
     openapi_tags=tags_metadata,
     lifespan=lifespan,

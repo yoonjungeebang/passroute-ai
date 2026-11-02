@@ -173,8 +173,10 @@ async def face_websocket(websocket: WebSocket, session_id: str, question_id: str
             logger.error(f"영상 분석 결과 MySQL 저장 에러: {e}")
 
 
-@router.get("/face/summary/{session_id}/{question_id}", tags=["평가"])
+@router.get("/face/summary/{session_id}/{question_id}", tags=["평가"],
+             summary="표정 분석 결과 조회")
 async def get_face_analysis_summary(session_id: str, question_id: str):
+    """질문별 시선 이탈 횟수, 평균 시선 집중률, 분당 깜빡임 수를 반환한다."""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(FaceAnalysis)
