@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "snunlp/KR-SBERT-V40K-klueNLI-augSTS"
     MODELS_DIR: str = "/app/models"
     
+    # TTS (AWS Polly)
+    TTS_VOICE: str = "Seoyeon"
+    TTS_ENABLED: bool = True
+
     # 토론 면접 모델 / 타임아웃
     OPENAI_MODEL_DEBATE: str = "gpt-4o"
     DEBATE_GENERATION_TIMEOUT: float = 120.0
