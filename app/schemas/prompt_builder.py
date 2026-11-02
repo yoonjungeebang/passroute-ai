@@ -21,6 +21,7 @@ class GeneratedQuestion(BaseModel):
     question: str
     followup_questions: list[str] = []
     intent: str | None = None
+    audio_url: str | None = None
 
 
 class QuestionGenerateResponse(BaseModel):

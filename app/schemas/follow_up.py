@@ -41,3 +41,4 @@ class FollowUpResponse(BaseModel):
     has_follow_up: bool
     follow_up_question: str | None = None
     reason: str | None = None
+    audio_url: str | None = None
