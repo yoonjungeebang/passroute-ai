@@ -45,6 +45,7 @@ class InterviewerOpeningRequest(BaseModel):
 
 class InterviewerOpeningResponse(BaseModel):
     content: str
+    audio_url: str | None = None
 
 
 class DebateOpeningRequest(BaseModel):
@@ -59,6 +60,7 @@ class DebateOpeningRequest(BaseModel):
 
 class DebateOpeningResponse(BaseModel):
     content: str
+    audio_url: str | None = None
 
 
 class DebateRebuttalRequest(BaseModel):
@@ -73,6 +75,7 @@ class DebateRebuttalRequest(BaseModel):
 
 class DebateRebuttalResponse(BaseModel):
     content: str
+    audio_url: str | None = None
 
 
 class DebateClosingRequest(BaseModel):
@@ -85,6 +88,7 @@ class DebateClosingRequest(BaseModel):
 
 class DebateClosingResponse(BaseModel):
     content: str
+    audio_url: str | None = None
 
 
 class InterviewerClosingRequest(BaseModel):
@@ -94,6 +98,7 @@ class InterviewerClosingRequest(BaseModel):
 
 class InterviewerClosingResponse(BaseModel):
     content: str
+    audio_url: str | None = None
 
 
 # ── 평가 (/evaluate/debate-turn) ──────────────────────────────────────────────
