@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -26,11 +27,20 @@ from app.schemas.debate import (
     DebateWeaknessItem,
     InterviewerClosingRequest,
     InterviewerClosingResponse,
+    InterviewerCueRequest,
+    InterviewerCueResponse,
     InterviewerOpeningRequest,
     InterviewerOpeningResponse,
+    TopicCandidate,
+    TopicDetailRequest,
+    TopicDetailResponse,
+    TopicSuggestRequest,
+    TopicSuggestResponse,
     TurnHighlight,
 )
 from app.services.llm_service import _client, _parse_json
+
+logger = logging.getLogger(__name__)
 
 # ── 프롬프트 캐싱 ──────────────────────────────────────────────────────────────
 
@@ -309,6 +319,13 @@ async def generate_debate_session_summary(
     )
 
 
+_CUE_GUIDES = {
+    "REBUTTAL_START": "반박 라운드 시작을 알린다. 상대 주장의 논거를 짚어달라고 안내한다.",
+    "REBUTTAL_EXTRA": "추가 반박 기회를 안내한다. 보충 반박이나 새로운 논점 제시를 유도한다.",
+    "CLOSING_GUIDE": "마무리 발언 라운드 시작을 알린다. 핵심 주장을 정리해달라고 안내한다.",
+}
+
+
 async def generate_debate_report(req: DebateReportRequest) -> DebateReportResponse:
     scores = [t.weighted_score for t in req.turn_evaluations]
     avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
@@ -340,4 +357,80 @@ async def generate_debate_report(req: DebateReportRequest) -> DebateReportRespon
         recommended_topics=raw["recommended_topics"],
         final_advice=raw["final_advice"],
         debate_readiness_comment=raw["debate_readiness_comment"],
+    )
+
+
+# ── 면접관 진행 멘트 ─────────────────────────────────────────────────────────
+
+async def generate_interviewer_cue(req: InterviewerCueRequest) -> InterviewerCueResponse:
+    raw = await _call(
+        "interviewer_cue",
+        {
+            "cue_type": req.cue_type,
+            "cue_guide": _CUE_GUIDES[req.cue_type],
+        },
+        max_tokens=256,
+        timeout=settings.DEBATE_GENERATION_TIMEOUT,
+        model=settings.OPENAI_MODEL_DEBATE,
+    )
+    return InterviewerCueResponse(content=raw["content"])
+
+
+# ── 토론 주제 추천 ───────────────────────────────────────────────────────────
+
+async def suggest_debate_topics(req: TopicSuggestRequest) -> TopicSuggestResponse:
+    from app.core.sources import NEWS_SOURCES
+    from app.services.resume_vector_store import query_crawled_data
+
+    keywords_text = ", ".join(req.keywords) if req.keywords else "없음"
+    search_query = " ".join(req.keywords) if req.keywords else "IT 개발 채용 토론"
+    if req.company_name:
+        search_query = f"{req.company_name} {search_query}"
+
+    news_count = 0
+    try:
+        news_context = await query_crawled_data(search_query, NEWS_SOURCES, n_results=5)
+        if news_context:
+            news_count = news_context.count("\n") + 1
+    except Exception as e:
+        logger.warning("크롤링 데이터 검색 실패 (topic_suggest): %s", e)
+        news_context = ""
+
+    raw = await _call(
+        "topic_suggest",
+        {
+            "count": req.count,
+            "keywords_text": keywords_text,
+            "company_name": req.company_name or "지정 없음",
+            "news_context": news_context or "참고 자료 없음",
+        },
+        max_tokens=1024,
+        timeout=settings.DEBATE_EVAL_TIMEOUT,
+    )
+    return TopicSuggestResponse(
+        candidates=[TopicCandidate(**c) for c in raw["candidates"]],
+        news_count=news_count,
+    )
+
+
+# ── 토론 주제 상세 ───────────────────────────────────────────────────────────
+
+async def generate_topic_detail(req: TopicDetailRequest) -> TopicDetailResponse:
+    raw = await _call(
+        "topic_detail",
+        {
+            "title": req.title,
+            "summary": req.summary or "없음",
+            "category": req.category,
+            "company_name": req.company_name or "지정 없음",
+        },
+        max_tokens=1024,
+        timeout=settings.DEBATE_EVAL_TIMEOUT,
+    )
+    return TopicDetailResponse(
+        topic_title=raw["topic_title"],
+        category=raw["category"],
+        topic_description=raw["topic_description"],
+        pro_key_points=raw["pro_key_points"],
+        con_key_points=raw["con_key_points"],
     )

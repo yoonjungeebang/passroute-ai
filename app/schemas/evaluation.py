@@ -241,3 +241,43 @@ class ReportGenerationResponse(BaseModel):
     recommended_questions: list[str]
     final_advice: str
     readiness_comment: str
+
+
+# ── 자소서 종합 피드백 (/report/self-intro/generate) ─────────────────────────
+
+TrendDirection = Literal["UP", "STABLE", "DOWN"]
+Readiness = Literal["READY", "NEEDS_REVIEW", "NEEDS_IMPROVEMENT"]
+
+
+class ItemTrend(BaseModel):
+    item: str
+    first_avg: float
+    last_avg: float
+    direction: TrendDirection
+
+
+class SelfIntroSessionItem(BaseModel):
+    round: int
+    score: float = Field(ge=0, le=100)
+    key_weaknesses: list[str]
+
+
+class SelfIntroSummaryRequest(BaseModel):
+    job_title: str
+    company_name: str
+    total_sessions: int
+    overall_average: float = Field(ge=0, le=100)
+    item_averages: dict[str, float]
+    item_trend: list[ItemTrend]
+    sessions: list[SelfIntroSessionItem]
+    readiness: Readiness
+
+
+class SelfIntroSummaryOutput(BaseModel):
+    overall: str
+    repeated_weakness: str
+    next_steps: str
+
+
+class SelfIntroSummaryResponse(BaseModel):
+    self_intro_summary: SelfIntroSummaryOutput

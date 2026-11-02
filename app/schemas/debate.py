@@ -200,3 +200,57 @@ class DebateReportResponse(BaseModel):
     recommended_topics: list[str]
     final_advice: str
     debate_readiness_comment: str
+
+
+# ── 면접관 진행 멘트 (/debate/interviewer-cue) ───────────────────────────────
+
+CueType = Literal["REBUTTAL_START", "REBUTTAL_EXTRA", "CLOSING_GUIDE"]
+
+
+class InterviewerCueRequest(BaseModel):
+    cue_type: CueType
+
+
+class InterviewerCueResponse(BaseModel):
+    content: str
+    audio_url: str | None = None
+
+
+# ── 토론 주제 추천 (/debate/topics/suggest) ──────────────────────────────────
+
+TopicCategory = Literal["AI_ETHICS", "RECRUITMENT", "DEV_CULTURE", "TECH_TREND"]
+
+
+class TopicSuggestRequest(BaseModel):
+    keywords: list[str]
+    count: int = Field(default=3, ge=1, le=5)
+    company_name: str | None = None
+
+
+class TopicCandidate(BaseModel):
+    title: str
+    description: str
+    category: TopicCategory
+
+
+class TopicSuggestResponse(BaseModel):
+    candidates: list[TopicCandidate]
+    news_count: int
+
+
+# ── 토론 주제 상세 (/debate/topics/detail) ───────────────────────────────────
+
+
+class TopicDetailRequest(BaseModel):
+    title: str
+    summary: str | None = None
+    category: TopicCategory
+    company_name: str | None = None
+
+
+class TopicDetailResponse(BaseModel):
+    topic_title: str
+    category: TopicCategory
+    topic_description: str
+    pro_key_points: list[str]
+    con_key_points: list[str]

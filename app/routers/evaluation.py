@@ -13,6 +13,8 @@ from app.schemas.evaluation import (
     QuestionEvaluationResponse,
     ReportGenerationRequest,
     ReportGenerationResponse,
+    SelfIntroSummaryRequest,
+    SelfIntroSummaryResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
     StarEvaluationRequest,
@@ -27,6 +29,7 @@ from app.services.llm_service import (
     evaluate_question,
     evaluate_star,
     generate_report,
+    generate_self_intro_summary,
     generate_session_summary,
 )
 
@@ -53,6 +56,11 @@ async def session_summary_endpoint(req: SessionSummaryRequest) -> SessionSummary
 @router.post("/report/generate", response_model=ReportGenerationResponse)
 async def report_generate_endpoint(req: ReportGenerationRequest) -> ReportGenerationResponse:
     return await generate_report(req)
+
+
+@router.post("/report/self-intro/generate", response_model=SelfIntroSummaryResponse)
+async def self_intro_summary_endpoint(req: SelfIntroSummaryRequest) -> SelfIntroSummaryResponse:
+    return await generate_self_intro_summary(req)
 
 
 # ── 토론 면접 평가 ─────────────────────────────────────────────────────────────

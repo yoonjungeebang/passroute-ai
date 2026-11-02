@@ -16,6 +16,9 @@ from app.schemas.evaluation import (
     ReportGenerationRequest,
     ReportGenerationResponse,
     ScoreItemWithWeight,
+    SelfIntroSummaryOutput,
+    SelfIntroSummaryRequest,
+    SelfIntroSummaryResponse,
     SessionSummaryOutput,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -341,4 +344,76 @@ JSON만 반환:
         recommended_questions=raw["recommended_questions"],
         final_advice=raw["final_advice"],
         readiness_comment=raw["readiness_comment"],
+    )
+
+
+# ── 자소서 종합 피드백 ───────────────────────────────────────────────────────
+
+_READINESS_LABELS = {
+    "READY": "면접 준비 완료",
+    "NEEDS_REVIEW": "일부 보완 필요",
+    "NEEDS_IMPROVEMENT": "추가 연습 필요",
+}
+
+
+async def generate_self_intro_summary(
+    req: SelfIntroSummaryRequest,
+) -> SelfIntroSummaryResponse:
+    item_avgs_json = json.dumps(req.item_averages, ensure_ascii=False, indent=2)
+    item_trend_json = json.dumps(
+        [t.model_dump() for t in req.item_trend], ensure_ascii=False, indent=2
+    )
+    sessions_json = json.dumps(
+        [s.model_dump() for s in req.sessions], ensure_ascii=False, indent=2
+    )
+
+    user_prompt = f"""아래는 자소서 기반 면접 연습의 종합 데이터입니다. 전체 추세를 진단하고 종합 피드백을 생성해주세요.
+
+[채용 정보]
+- 직무: {req.job_title}
+- 회사: {req.company_name}
+
+[연습 현황]
+- 총 세션 수: {req.total_sessions}회
+- 종합 평균 점수: {req.overall_average}점 (0~100)
+- 면접 준비도: {_READINESS_LABELS[req.readiness]}
+
+[항목별 평균 점수 (0~5)]
+{item_avgs_json}
+
+[항목별 추이]
+{item_trend_json}
+
+[회차별 결과]
+{sessions_json}
+
+---
+
+작성 지침:
+- overall: 전체 추세(상승/하락/정체)를 진단하고 현재 수준을 2~3문장으로 평가한다. 점수 추이와 준비도를 근거로 작성한다.
+- repeated_weakness: 회차 간 반복되는 약점을 분석한다. key_weaknesses에서 2회 이상 등장하는 항목을 중심으로 1~2문장으로 진단한다.
+- next_steps: 다음 연습에서 집중해야 할 구체적 방향을 1~2문장으로 제안한다. "열심히 하세요" 같은 추상적 표현 금지.
+
+JSON만 반환:
+{{
+  "self_intro_summary": {{
+    "overall": "추세 진단 포함 종합 피드백",
+    "repeated_weakness": "반복 약점 진단",
+    "next_steps": "다음 연습 방향"
+  }}
+}}"""
+
+    raw = await _call_llm_json(
+        system_prompt="당신은 채용 면접 피드백 전문가입니다. 자소서 기반 면접 연습의 종합 데이터를 분석하여 추세 진단과 피드백을 생성합니다. JSON 형식으로만 반환합니다.",
+        user_prompt=user_prompt,
+        max_output_tokens=1024,
+    )
+
+    summary_data = raw["self_intro_summary"]
+    return SelfIntroSummaryResponse(
+        self_intro_summary=SelfIntroSummaryOutput(
+            overall=summary_data["overall"],
+            repeated_weakness=summary_data["repeated_weakness"],
+            next_steps=summary_data["next_steps"],
+        )
     )
