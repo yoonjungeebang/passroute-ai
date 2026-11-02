@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -37,8 +38,6 @@ from app.schemas.debate import (
     TopicSuggestResponse,
     TurnHighlight,
 )
-import logging
-
 from app.services.llm_service import _client, _parse_json
 
 logger = logging.getLogger(__name__)
