@@ -13,7 +13,7 @@ from app.services.stt_service import SAMPLE_RATE, detect_voice, transcribe_audio
 from app.services.voice_analysis_service import count_filler_words
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["실시간 분석"])
 
 WPM_SLOW = 100
 WPM_FAST = 180

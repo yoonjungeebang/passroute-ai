@@ -42,9 +42,37 @@ async def lifespan(app: FastAPI):
     await close_http_client()
 
 
+tags_metadata = [
+    {
+        "name": "실시간 분석",
+        "description": "프론트엔드에서 AI 서버로 **직접 연결**하는 WebSocket 엔드포인트. STT, 표정 분석 포함.",
+    },
+    {
+        "name": "질문 생성",
+        "description": "면접 질문 생성 및 꼬리질문 생성. 백엔드 서버 경유.",
+    },
+    {
+        "name": "평가",
+        "description": "답변 평가, 세션 요약, 음성/표정 분석 결과 조회. 백엔드 서버 경유.",
+    },
+    {
+        "name": "리포트",
+        "description": "면접 리포트 생성. 백엔드 서버 경유.",
+    },
+    {
+        "name": "토론 면접",
+        "description": "토론 면접 진행 관련 엔드포인트. 백엔드 서버 경유.",
+    },
+    {
+        "name": "이력서",
+        "description": "이력서 업로드, 임베딩 저장, 검색. 백엔드 서버 경유.",
+    },
+]
+
 app = FastAPI(
     title="PassRoute AI server",
     version="1.0.0",
+    openapi_tags=tags_metadata,
     lifespan=lifespan,
 )
 
@@ -59,18 +87,23 @@ if origins:
         allow_headers=["*"],
     )
 
-app.include_router(evaluation_router)
-
+# 실시간 분석 (프론트엔드 직접 연결)
 app.include_router(stt.router)
-app.include_router(voice_analysis.router)
 app.include_router(face_analysis.router)
 
+# 질문 생성
+app.include_router(question_generate_router)
 app.include_router(follow_up_router)
 
-app.include_router(question_generate_router)
+# 평가 / 리포트
+app.include_router(evaluation_router)
+app.include_router(voice_analysis.router)
 
-app.include_router(resume_router)
+# 토론 면접
 app.include_router(debate_router)
+
+# 이력서
+app.include_router(resume_router)
 
 
 @app.get("/health")

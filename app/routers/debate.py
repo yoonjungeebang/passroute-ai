@@ -29,7 +29,7 @@ from app.services.debate_llm_service import (
     suggest_debate_topics,
 )
 
-router = APIRouter(tags=["debate"])
+router = APIRouter(tags=["토론 면접"])
 
 
 @router.post("/debate/interviewer-opening", response_model=InterviewerOpeningResponse)

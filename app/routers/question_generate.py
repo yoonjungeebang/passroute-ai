@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.schemas.prompt_builder import QuestionGenerateRequest, QuestionGenerateResponse
 from app.services.prompt_builder import generate_questions
 
-router = APIRouter(prefix="/api/questions", tags=["question-generate"])
+router = APIRouter(prefix="/api/questions", tags=["질문 생성"])
 
 
 @router.post("/generate", response_model=QuestionGenerateResponse)

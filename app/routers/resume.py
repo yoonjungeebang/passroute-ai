@@ -5,7 +5,7 @@ from app.schemas.resume import DocumentStoreRequest
 from app.services.resume_parser import parse_resume
 from app.services.resume_vector_store import search_candidates, store_resume
 
-router = APIRouter(prefix="/resume", tags=["resume"])
+router = APIRouter(prefix="/resume", tags=["이력서"])
 
 
 @router.post("/process")

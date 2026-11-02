@@ -33,48 +33,48 @@ from app.services.llm_service import (
     generate_session_summary,
 )
 
-router = APIRouter(tags=["evaluation"])
+router = APIRouter()
 
 
 # ── 1대1 면접 평가 ─────────────────────────────────────────────────────────────
 
-@router.post("/evaluate/question", response_model=QuestionEvaluationResponse)
+@router.post("/evaluate/question", response_model=QuestionEvaluationResponse, tags=["평가"])
 async def evaluate_question_endpoint(req: QuestionEvaluationRequest) -> QuestionEvaluationResponse:
     return await evaluate_question(req)
 
 
-@router.post("/evaluate/star", response_model=StarEvaluationResponse)
+@router.post("/evaluate/star", response_model=StarEvaluationResponse, tags=["평가"])
 async def evaluate_star_endpoint(req: StarEvaluationRequest) -> StarEvaluationResponse:
     return await evaluate_star(req)
 
 
-@router.post("/evaluate/session-summary", response_model=SessionSummaryResponse)
+@router.post("/evaluate/session-summary", response_model=SessionSummaryResponse, tags=["평가"])
 async def session_summary_endpoint(req: SessionSummaryRequest) -> SessionSummaryResponse:
     return await generate_session_summary(req)
 
 
-@router.post("/report/generate", response_model=ReportGenerationResponse)
+@router.post("/report/generate", response_model=ReportGenerationResponse, tags=["리포트"])
 async def report_generate_endpoint(req: ReportGenerationRequest) -> ReportGenerationResponse:
     return await generate_report(req)
 
 
-@router.post("/report/self-intro/generate", response_model=SelfIntroSummaryResponse)
+@router.post("/report/self-intro/generate", response_model=SelfIntroSummaryResponse, tags=["리포트"])
 async def self_intro_summary_endpoint(req: SelfIntroSummaryRequest) -> SelfIntroSummaryResponse:
     return await generate_self_intro_summary(req)
 
 
 # ── 토론 면접 평가 ─────────────────────────────────────────────────────────────
 
-@router.post("/evaluate/debate-turn", response_model=DebateTurnEvalResponse)
+@router.post("/evaluate/debate-turn", response_model=DebateTurnEvalResponse, tags=["평가"])
 async def evaluate_debate_turn_endpoint(req: DebateTurnEvalRequest) -> DebateTurnEvalResponse:
     return await evaluate_debate_turn(req)
 
 
-@router.post("/debate/session-summary", response_model=DebateSessionSummaryResponse)
+@router.post("/debate/session-summary", response_model=DebateSessionSummaryResponse, tags=["평가"])
 async def debate_session_summary_endpoint(req: DebateSessionSummaryRequest) -> DebateSessionSummaryResponse:
     return await generate_debate_session_summary(req)
 
 
-@router.post("/report/debate/generate", response_model=DebateReportResponse)
+@router.post("/report/debate/generate", response_model=DebateReportResponse, tags=["리포트"])
 async def debate_report_generate_endpoint(req: DebateReportRequest) -> DebateReportResponse:
     return await generate_debate_report(req)
