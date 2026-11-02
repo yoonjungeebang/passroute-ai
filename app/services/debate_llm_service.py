@@ -39,6 +39,7 @@ from app.schemas.debate import (
     TurnHighlight,
 )
 from app.services.llm_service import _client, _parse_json
+from app.services.tts_service import synthesize_and_upload
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,9 @@ async def generate_interviewer_opening(req: InterviewerOpeningRequest) -> Interv
         timeout=settings.DEBATE_GENERATION_TIMEOUT,
         model=settings.OPENAI_MODEL_DEBATE,
     )
-    return InterviewerOpeningResponse(content=raw["content"])
+    content = raw["content"]
+    audio_url = await synthesize_and_upload(content, "tts/debate")
+    return InterviewerOpeningResponse(content=content, audio_url=audio_url)
 
 
 async def generate_competitor_opening(req: DebateOpeningRequest) -> DebateOpeningResponse:
@@ -206,7 +209,9 @@ async def generate_competitor_opening(req: DebateOpeningRequest) -> DebateOpenin
         timeout=settings.DEBATE_GENERATION_TIMEOUT,
         model=settings.OPENAI_MODEL_DEBATE,
     )
-    return DebateOpeningResponse(content=raw["content"])
+    content = raw["content"]
+    audio_url = await synthesize_and_upload(content, "tts/debate")
+    return DebateOpeningResponse(content=content, audio_url=audio_url)
 
 
 async def generate_competitor_rebuttal(req: DebateRebuttalRequest) -> DebateRebuttalResponse:
@@ -228,7 +233,9 @@ async def generate_competitor_rebuttal(req: DebateRebuttalRequest) -> DebateRebu
         timeout=settings.DEBATE_GENERATION_TIMEOUT,
         model=settings.OPENAI_MODEL_DEBATE,
     )
-    return DebateRebuttalResponse(content=raw["content"])
+    content = raw["content"]
+    audio_url = await synthesize_and_upload(content, "tts/debate")
+    return DebateRebuttalResponse(content=content, audio_url=audio_url)
 
 
 async def generate_competitor_closing(req: DebateClosingRequest) -> DebateClosingResponse:
@@ -248,7 +255,9 @@ async def generate_competitor_closing(req: DebateClosingRequest) -> DebateClosin
         timeout=settings.DEBATE_GENERATION_TIMEOUT,
         model=settings.OPENAI_MODEL_DEBATE,
     )
-    return DebateClosingResponse(content=raw["content"])
+    content = raw["content"]
+    audio_url = await synthesize_and_upload(content, "tts/debate")
+    return DebateClosingResponse(content=content, audio_url=audio_url)
 
 
 async def generate_interviewer_closing(req: InterviewerClosingRequest) -> InterviewerClosingResponse:
@@ -262,7 +271,9 @@ async def generate_interviewer_closing(req: InterviewerClosingRequest) -> Interv
         timeout=settings.DEBATE_GENERATION_TIMEOUT,
         model=settings.OPENAI_MODEL_DEBATE,
     )
-    return InterviewerClosingResponse(content=raw["content"])
+    content = raw["content"]
+    audio_url = await synthesize_and_upload(content, "tts/debate")
+    return InterviewerClosingResponse(content=content, audio_url=audio_url)
 
 
 # ── 평가/요약/리포트 (model=OPENAI_MODEL 기본값) ──────────────────────────────
@@ -373,7 +384,9 @@ async def generate_interviewer_cue(req: InterviewerCueRequest) -> InterviewerCue
         timeout=settings.DEBATE_GENERATION_TIMEOUT,
         model=settings.OPENAI_MODEL_DEBATE,
     )
-    return InterviewerCueResponse(content=raw["content"])
+    content = raw["content"]
+    audio_url = await synthesize_and_upload(content, "tts/debate")
+    return InterviewerCueResponse(content=content, audio_url=audio_url)
 
 
 # ── 토론 주제 추천 ───────────────────────────────────────────────────────────

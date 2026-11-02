@@ -11,6 +11,7 @@ from app.schemas.prompt_builder import (
     QuestionGenerateResponse,
 )
 from app.services.resume_vector_store import query_crawled_data
+from app.services.tts_service import synthesize_batch
 
 logger = logging.getLogger(__name__)
 
@@ -321,5 +322,11 @@ async def generate_questions(
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error("OpenAI 응답 파싱 실패: %s | raw=%s", e, raw[:300])
         raise ValueError(f"AI 응답 파싱 실패: {e}") from e
+
+    audio_urls = await synthesize_batch(
+        [q.question for q in questions], prefix="tts/interview"
+    )
+    for q, url in zip(questions, audio_urls):
+        q.audio_url = url
 
     return QuestionGenerateResponse(persona=request.persona, questions=questions)

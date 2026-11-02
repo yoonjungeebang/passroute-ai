@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.sources import BLOG_SOURCES, JD_SOURCES
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
 from app.services.resume_vector_store import query_crawled_data, query_resume
+from app.services.tts_service import synthesize_and_upload
 
 logger = logging.getLogger(__name__)
 
@@ -279,10 +280,17 @@ async def generate_follow_up(request: FollowUpRequest) -> FollowUpResponse:
         if not content:
             raise ValueError("Empty response content")
         parsed = json.loads(content.strip())
+        follow_up_question = parsed.get("follow_up_question")
+        audio_url = None
+        if parsed["has_follow_up"] and follow_up_question:
+            audio_url = await synthesize_and_upload(
+                follow_up_question, "tts/follow-up"
+            )
         return FollowUpResponse(
             has_follow_up=parsed["has_follow_up"],
-            follow_up_question=parsed.get("follow_up_question"),
+            follow_up_question=follow_up_question,
             reason=parsed.get("reason"),
+            audio_url=audio_url,
         )
     except APITimeoutError:
         logger.error("꼬리 질문 생성 타임아웃")
