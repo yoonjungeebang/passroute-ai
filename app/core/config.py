@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # SQL 로그 출력 여부 (운영 환경에서는 False)
     SQL_ECHO: bool = False
 
+    # CORS 허용 origin (쉼표 구분, 예: "http://localhost:3000,https://passroute.com")
+    ALLOWED_ORIGINS: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

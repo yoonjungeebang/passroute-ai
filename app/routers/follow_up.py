@@ -3,10 +3,11 @@ from fastapi import APIRouter
 from app.schemas.follow_up import FollowUpRequest, FollowUpResponse
 from app.services.follow_up import generate_follow_up
 
-router = APIRouter(prefix="/api", tags=["follow-up"])
+router = APIRouter(prefix="/api", tags=["질문 생성"])
 
 
-@router.post("/follow-up", response_model=FollowUpResponse)
+@router.post("/follow-up", response_model=FollowUpResponse,
+              summary="꼬리질문 생성")
 async def create_follow_up(body: FollowUpRequest) -> FollowUpResponse:
     """면접 답변에 대한 꼬리 질문을 생성한다.
 
